@@ -38,7 +38,7 @@ chronology and dead ends in [docs/WHAT-HAS-BEEN-TRIED.md](docs/WHAT-HAS-BEEN-TRI
 - [x] Clocks/regulators cleanup — both `*_ignore_unused` cmdline flags dropped; eMMC/SD supplies wired in DTB
 - [x] Power / PMIC / fuel gauge / charger — SC2730 PMIC + regulators healthy; `sc2730_fgu` reporting battery V/SoC/temp (`/sys/class/power_supply/sc27xx-fgu`); AW32257 charger now driven by mainline `bq2415x` (`/sys/class/power_supply/bq24158-0`, USB/online). Root cause of the long-dead i2c4 bus was a wrong AP-APB DT address (`apapb` identity `ranges;` vs offset child addrs → i2c4 at `0x00700000` DDR, not `0x70700000`); fixed in `ums512.dtsi`. See [docs/POWER-BRINGUP-NOTES.md](docs/POWER-BRINGUP-NOTES.md)
 - NOTE: that same `ap-apb` `ranges` fix should also resolve **UART0 hanging when enabled** (uart0/uart1/i2c0-3/spi0-3 were all mis-addressed the same way; only eMMC/sdio worked because they used absolute addresses).
-- [ ] CPU freq / thermal
+- [~] CPU freq / thermal — **thermal sensors live**: all 3 `sprd,ums512-thermal` controllers (`ap_thm0/1/2`) probe, 12 `thermal_zone*` report sane calibrated temps (CPU clusters/cores, GPU). DT (nodes + efuse cal cells + zones) was already complete in `ums512.dtsi`; efuse shadow at reserved-mem `nvmem@800` is populated so `sen_delta_cal` calibration works. **Trip points/cooling are inert** (no cpufreq cooling device yet) — deferred to cpufreq. cpufreq path: in-tree `sprd-cpufreq-v2` (`CONFIG_ARM_SPRD_CPUFREQ_V2=y`, compat `sprd,cpufreq-v2`), SMCCC-SIP based (firmware owns OPP via `SPRD_SIP_SVC_DVFS_*`); needs a DT node + verify firmware implements the SIP handlers
 - [ ] Audio
 - [ ] GPU
 - [ ] Wi-Fi / Bluetooth
@@ -47,6 +47,7 @@ chronology and dead ends in [docs/WHAT-HAS-BEEN-TRIED.md](docs/WHAT-HAS-BEEN-TRI
 - [ ] Sensors (only Hall-sensor expected, likely has accel/gyro though)
 - [ ] USB host / OTG — gadget works; cold-boot enum `-71` deep-dive in [docs/WHAT-HAS-BEEN-TRIED-USB.md](docs/WHAT-HAS-BEEN-TRIED-USB.md)
 - [ ] UART clocks
+- [ ] DDR devfreq / DDR-DVFS — *could be done, but will take some time.* No sprd devfreq driver in mainline (devfreq core/governors enabled, but no Unisoc driver); no DDR-DVFS DT nodes. Vendor has a large proprietary stack (`drivers/devfreq/sprd/` ddr-dvfs core + `sprd_governor_vote`, `apsys/` DPU/GSP/VSP DVFS, `sprd-top-dvfs`) coupled to `topdvfsctrl@322a0000`/`dmc-mpu` + SIPC to a remote DVFS coprocessor — a multi-week port. DDR free-runs at the firmware-set frequency (stable). Right-shaped path if ever wanted: a thin SMCCC-SIP devfreq driver (like `sprd-cpufreq-v2`), but none exists in-tree yet
 
 Cross-reference `device/stock/dtb_stock.dts` whenever a node, supply, syscon, or
 GPIO detail is unclear in mainline.
