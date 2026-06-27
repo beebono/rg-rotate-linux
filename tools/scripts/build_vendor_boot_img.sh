@@ -91,7 +91,7 @@ unpack_bootimg --boot_img "$OUTPUT_IMG" --out "$WORK_DIR/verify" 2>/dev/null \
 echo
 echo "Flash with:"
 echo "cd tools/spd_dump"
-echo "yes yes | ./spd_dump --wait 300 keep_charge 1 \\"
+echo "./spd_dump --wait 300 keep_charge 1 \\"
 echo "  fdl ../../device/stock/fw/extracted/fdl1-dl.bin 0x5500 \\"
 echo "  fdl ../../device/stock/fw/extracted/fdl2-dl.bin 0x9EFFFE00 \\"
 echo "  exec \\"

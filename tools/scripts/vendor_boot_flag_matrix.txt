@@ -12,7 +12,7 @@ Observed behavior so far:
   the best candidates for a visible panel result.
 
 Flash template:
-yes yes | ./spd_dump --wait 300 keep_charge 1 \
+./spd_dump --wait 300 keep_charge 1 \
   fdl ../../device/stock/fw/extracted/fdl1-dl.bin 0x5500 \
   fdl ../../device/stock/fw/extracted/fdl2-dl.bin 0x9EFFFE00 \
   write_part vendor_boot_a vendor_boot_custom_<FLAG>.img

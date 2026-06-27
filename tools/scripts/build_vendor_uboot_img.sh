@@ -47,7 +47,7 @@ python3 "$SCRIPT_DIR/pack_unisoc_uboot.py" \
 echo
 echo "Flash with:"
 echo "cd tools/spd_dump"
-echo "yes yes | ./spd_dump --wait 300 keep_charge 1 \\"
+echo "./spd_dump --wait 300 keep_charge 1 \\"
 echo "  fdl ../../device/stock/fw/extracted/fdl1-dl.bin 0x5500 \\"
 echo "  fdl ../../device/stock/fw/extracted/fdl2-dl.bin 0x9EFFFE00 \\"
 echo "  exec \\"

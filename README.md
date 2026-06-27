@@ -92,7 +92,7 @@ Enter FDL: force the device off (hold **Vol-Down + Power**), then hold the
 ```bash
 cd tools/spd_dump
 
-yes yes | ./spd_dump --wait 300 keep_charge 1 \
+./spd_dump --wait 300 keep_charge 1 \
   fdl ../../device/stock/fw/extracted/fdl1-dl.bin 0x5500 \
   fdl ../../device/stock/fw/extracted/fdl2-dl.bin 0x9EFFFE00 \
   exec \
