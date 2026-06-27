@@ -10,13 +10,13 @@ vendor_boot_a` (DTB only; no kernel rebuild required for any of this).
 - **PMIC (SC2730): healthy.** Regulators, watchdog, vibrator all live. No work needed.
 - **Fuel gauge (SC2730 FGU): DONE, verified on HW.** `/sys/class/power_supply/sc27xx-fgu`
   reports voltage/SoC/temp/charge. See "Fuel gauge" below.
-- **Charger (AW32257): IN PROGRESS, blocked on i2c4 bus.** Driver choice solved
-  (mainline `bq2415x`), pads confirmed correct (SIMCLK2/SIMDA2 @ AF1), pinmux
-  off-by-one fixed. Live probe (2026-06-27) narrowed the dead bus to **the i2c4
-  completion interrupt never firing (GICv3 47 = irq 19, 0 counts)** — NOT pinmux,
-  chip power, or clock (all ruled out). Now interrupt-broken vs. electrically-stuck;
-  needs a kernel-side `I2C_STATUS` dump to decide (devmem can't read 0x700000 —
-  STRICT_DEVMEM). See "2026-06-27 live-probe session" below. **This is where to resume.**
+- **Charger (AW32257): WORKING (2026-06-27).** `/sys/class/power_supply/bq24158-0`
+  reports `type=USB status=Full online=1`; `bq2415x-charger 4-006a: driver
+  registered`; zero i2c xfer timeouts; boot is much faster (no more 13 s of i2c
+  stalls). **Root cause was never the charger** — the AP-APB bus had a wrong DT
+  address (see below); the i2c4 driver had been poking DDR at `0x00700000` instead
+  of the real controller at `0x70700000`. All the prior pinmux/chip-power/IRQ/
+  electrical narrowing was downstream of that. Fixed in `ums512.dtsi`.
 
 ## Files changed
 
@@ -123,6 +123,40 @@ action on resume is `build_vendor_boot_img.sh` then flash `vendor_boot_a`.
      (`sprd_i2c_enable` re-writes `I2C_CTL`, clk, thresholds), a boot-time
      controller wedge is unlikely to survive a fresh transfer — so pinmux alone
      may not be the whole story.
+
+## 2026-06-27 RESOLVED — wrong AP-APB DT address (not the charger at all)
+
+**The i2c4 driver was ioremapping the wrong physical address.** Mainline
+`ums512.dtsi` `apapb: ap-apb` had a bare identity `ranges;`, but its uart/i2c/spi
+children use *offset* addresses (i2c4 = `i2c@700000`). With identity ranges those
+resolved to `0x00700000` (DDR), not the real `0x70700000` (AP-APB window
+`0x70000000` + `0x700000`). So the driver read/wrote DDR — every register read was
+junk and every transfer timed out at `-110`. The `sdio`/eMMC nodes used *absolute*
+addresses (`mmc@71100000`) so they worked under identity ranges, which masked the
+bug; UART0 also hangs when enabled, same root cause.
+
+**Proof on HW** (reading the true base `0x70700000` with the clock forced on via a
+background probe loop): `VERSION=0x900` (r9p0), `STATUS=0x00310640` (SCL_IN=1,
+SDA_IN=1 → bus idle-high/healthy), `ADDR_CFG=0xd4` = `0x6a<<1` (the charger addr
+left by the bootloader's own i2c4 charging). `0x00700000` (DDR) read back garbage;
+`0x70700000` while idle gave a bus error (clock-gated peripheral). devmem worked
+fine the whole time — the earlier STRICT_DEVMEM theory was wrong; the "garbage" was
+just real DDR contents.
+
+**Fix** (`ums512.dtsi`): give `apapb` a translating
+`ranges = <0x0 0x0 0x0 0x70000000 0x0 0x10000000>` and convert the three sdio nodes
+from absolute to offset (`mmc@71100000` → `mmc@1100000`, etc.) so every peripheral
+keeps its identical final physical address (eMMC stays `0x71400000`) consistently.
+Decompiled DTB verified i2c4→`0x70700000`, eMMC→`0x71400000`. DTB-only reflash of
+`vendor_boot_a`.
+
+**Result:** charger up (`bq24158-0` USB/Full/online), no timeouts, faster boot,
+eMMC still boots. A temporary `dev_err` I2C_STATUS dump was added to `i2c-sprd.c` to
+diagnose and has been reverted (boot_a still carries it until the next kernel
+reflash — harmless, it never fires now).
+
+Everything below is the investigation trail that led here; the interrupt/electrical
+narrowing was all downstream of the wrong address and is kept for the record.
 
 ## 2026-06-27 live-probe session — narrowed to interrupt-or-electrical
 

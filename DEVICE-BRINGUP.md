@@ -36,7 +36,8 @@ chronology and dead ends in [docs/WHAT-HAS-BEEN-TRIED.md](docs/WHAT-HAS-BEEN-TRI
 - [x] Storage / rootfs
 - [x] Display / DRM — cold kernel-native init works (fbcon + Debian login on panel), no U-Boot handoff needed — see [docs/DISPLAY-BRINGUP.md](docs/DISPLAY-BRINGUP.md)
 - [x] Clocks/regulators cleanup — both `*_ignore_unused` cmdline flags dropped; eMMC/SD supplies wired in DTB
-- [~] Power / PMIC / fuel gauge — SC2730 PMIC + regulators healthy; `sc2730_fgu` enabled & reporting battery V/SoC/temp (`/sys/class/power_supply/sc27xx-fgu`). Remaining: AW32257 I2C charger (no mainline driver) + charger status — see [docs/POWER-BRINGUP-NOTES.md](docs/POWER-BRINGUP-NOTES.md)
+- [x] Power / PMIC / fuel gauge / charger — SC2730 PMIC + regulators healthy; `sc2730_fgu` reporting battery V/SoC/temp (`/sys/class/power_supply/sc27xx-fgu`); AW32257 charger now driven by mainline `bq2415x` (`/sys/class/power_supply/bq24158-0`, USB/online). Root cause of the long-dead i2c4 bus was a wrong AP-APB DT address (`apapb` identity `ranges;` vs offset child addrs → i2c4 at `0x00700000` DDR, not `0x70700000`); fixed in `ums512.dtsi`. See [docs/POWER-BRINGUP-NOTES.md](docs/POWER-BRINGUP-NOTES.md)
+- NOTE: that same `ap-apb` `ranges` fix should also resolve **UART0 hanging when enabled** (uart0/uart1/i2c0-3/spi0-3 were all mis-addressed the same way; only eMMC/sdio worked because they used absolute addresses).
 - [ ] CPU freq / thermal
 - [ ] Audio
 - [ ] GPU
