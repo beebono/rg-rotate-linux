@@ -1,0 +1,15 @@
+# Add agents here if I missed yours
+/.agents
+/.claude
+/.codex
+
+# Device image backup/scratch directory(ies)
+/build
+/device
+
+# Generated rootfs artifacts (reproduce via src/rootfs-build/*.sh)
+/src/rootfs-build/*.tar
+/src/rootfs-build/*.img
+/src/rootfs-build/*.img.tar
+
+# Generated initramfs tree is emitted into /build (see src/initramfs/build-initramfs.sh)

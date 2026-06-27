@@ -1,0 +1,3 @@
+# Unisoc/Spreadtrum BootROM + FDL download mode (spd_dump)
+SUBSYSTEM=="usb", ATTR{idVendor}=="1782", ATTR{idProduct}=="4d00", MODE="0666", GROUP="plugdev"
+SUBSYSTEM=="usb", ATTR{idVendor}=="1782", ATTR{idProduct}=="d00d", MODE="0666", GROUP="plugdev"

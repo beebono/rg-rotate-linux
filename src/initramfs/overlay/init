@@ -1,0 +1,90 @@
+#!/bin/sh
+mount -t proc none /proc
+mount -t sysfs none /sys
+mount -t devtmpfs devtmpfs /dev
+
+WD_PETTERS=""
+for w in /dev/watchdog /dev/watchdog0 /dev/watchdog1 /dev/watchdog2 /dev/watchdog3; do
+	if [ -e "$w" ]; then
+		( exec 9>"$w"; while : ; do echo -n x >&9; sleep 1; done ) &
+		WD_PETTERS="$WD_PETTERS $!"
+	fi
+done
+
+echo "UMS512 initramfs init reached" > /dev/kmsg 2>/dev/null
+
+# Force USB peripheral role so the kernel musb establishes a session and the
+# g_serial gadget enumerates (no extcon/typec on this board, dr_mode=otg).
+for r in /sys/class/usb_role/*/role; do
+	[ -e "$r" ] || continue
+	echo device > "$r" 2>/dev/null
+done
+
+# Try to pivot into the real Debian rootfs on eMMC userdata (mmcblk3p74).
+ROOTDEV=/dev/mmcblk3p74
+NEWROOT=/newroot
+mkdir -p "$NEWROOT"
+for i in 1 2 3 4 5 6 7 8 9 10; do
+	[ -b "$ROOTDEV" ] && break
+	sleep 1
+done
+
+# eMMC can need a moment to settle; retry the mount itself, not just node presence.
+# Note: $NEWROOT/sbin/init is an absolute symlink (-> /lib/systemd/systemd) that
+# can't be resolved from the initramfs root, so probe the real binary instead.
+mounted=0
+for i in 1 2 3 4 5 6 7 8 9 10; do
+	if mount -t ext4 -o noatime "$ROOTDEV" "$NEWROOT" 2>/dev/null; then
+		mounted=1
+		break
+	fi
+	sleep 1
+done
+
+if [ "$mounted" = 1 ] && [ -x "$NEWROOT/lib/systemd/systemd" ]; then
+	echo "initramfs: switching root to $ROOTDEV" > /dev/kmsg 2>/dev/null
+	# Stop the initramfs watchdog petters; they would otherwise survive
+	# switch_root (reparented to the new init), busy-spin, and hold the
+	# watchdog devices away from the rootfs watchdog service.
+	[ -n "$WD_PETTERS" ] && kill $WD_PETTERS 2>/dev/null
+	mount --move /dev "$NEWROOT/dev" 2>/dev/null
+	mount --move /proc "$NEWROOT/proc" 2>/dev/null
+	mount --move /sys "$NEWROOT/sys" 2>/dev/null
+	exec switch_root "$NEWROOT" /sbin/init
+fi
+
+# Fallback: rootfs unavailable/unbootable. Keep the initramfs shell on the
+# gadget serial so the device stays reachable for recovery.
+echo "initramfs: rootfs pivot FAILED, staying in initramfs" > /dev/kmsg 2>/dev/null
+umount "$NEWROOT" 2>/dev/null
+
+# Dump everything we need to diagnose why the rootfs pivot failed, straight to
+# the gadget serial, so a freshly-attached host sees it without typing anything.
+# (The previous fallback spawned a non-interactive `sh` with redirected stdin --
+# no prompt, no echo, no job control -- which looked dead on the host side.)
+print_diag() {
+	echo
+	echo "==== UMS512 initramfs RECOVERY: rootfs pivot FAILED ===="
+	echo "--- /proc/cmdline ---"; cat /proc/cmdline 2>&1
+	echo "--- /dev/mmcblk* ---"; ls -l /dev/mmcblk* 2>&1
+	echo "--- /dev/sd* ---"; ls -l /dev/sd* 2>&1
+	echo "--- mmc/sdhci dmesg ---"; dmesg 2>&1 | grep -iE 'mmc|sdhci' | tail -30
+	echo "--- retry: mount -t ext4 $ROOTDEV $NEWROOT ---"
+	mount -t ext4 -o noatime "$ROOTDEV" "$NEWROOT" 2>&1; umount "$NEWROOT" 2>/dev/null
+	echo "==== interactive shell below; Ctrl-D re-prints this banner ===="
+	echo
+}
+
+# Reprint the diagnostics on a loop, reopening the gadget each pass, so a host
+# that attaches at any time catches a fresh banner within a few seconds. We do
+# NOT spawn an interactive shell here: the gadget enumerates before the host
+# opens the port, so a one-shot print is emitted into the void and a blocking
+# `sh -i` then sits forever -- which is why earlier attempts looked dead.
+(
+	while [ ! -e /dev/ttyGS0 ]; do sleep 1; done
+	while : ; do
+		print_diag > /dev/ttyGS0 2>&1
+		sleep 3
+	done
+) &
+while : ; do sleep 5; done
