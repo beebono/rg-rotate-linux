@@ -95,14 +95,17 @@ cd tools/spd_dump
 yes yes | ./spd_dump --wait 300 keep_charge 1 \
   fdl ../../device/stock/fw/extracted/fdl1-dl.bin 0x5500 \
   fdl ../../device/stock/fw/extracted/fdl2-dl.bin 0x9EFFFE00 \
+  exec \
   write_part boot_a ../../build/boot/boot_custom.img \
-  power_off
+  poweroff
 ```
 
-For DTB changes, rebuild and repack `vendor_boot_custom.img`, then write
-`vendor_boot_a`. `FDL2: incompatible partition` is benign. After flashing, force
-off fully (spd_dump ... power_off) and then power on — USB-plug boot works best so far,
-and warm reset is unreliable for USB enumeration.
+`exec` must come after the two `fdl` loads and before the `write_part`s; `poweroff`
+is the final command. For DTB changes, rebuild and repack `vendor_boot_custom.img`,
+then `write_part vendor_boot_a ...` (multiple `write_part`s can follow one `exec`).
+`FDL2: incompatible partition` is benign. After flashing, force off fully
+(spd_dump ... poweroff) and then power on — USB-plug boot works best so far, and
+warm reset is unreliable for USB enumeration.
 
 Connect to the console:
 

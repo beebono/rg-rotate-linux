@@ -11,9 +11,12 @@ vendor_boot_a` (DTB only; no kernel rebuild required for any of this).
 - **Fuel gauge (SC2730 FGU): DONE, verified on HW.** `/sys/class/power_supply/sc27xx-fgu`
   reports voltage/SoC/temp/charge. See "Fuel gauge" below.
 - **Charger (AW32257): IN PROGRESS, blocked on i2c4 bus.** Driver choice solved
-  (mainline `bq2415x`), pads identified, an off-by-one pinmux bug found and fixed
-  in the DTS — but the i2c4 bus is still electrically dead in live testing. See
-  "Charger / i2c4" below. **This is where to resume.**
+  (mainline `bq2415x`), pads confirmed correct (SIMCLK2/SIMDA2 @ AF1), pinmux
+  off-by-one fixed. Live probe (2026-06-27) narrowed the dead bus to **the i2c4
+  completion interrupt never firing (GICv3 47 = irq 19, 0 counts)** — NOT pinmux,
+  chip power, or clock (all ruled out). Now interrupt-broken vs. electrically-stuck;
+  needs a kernel-side `I2C_STATUS` dump to decide (devmem can't read 0x700000 —
+  STRICT_DEVMEM). See "2026-06-27 live-probe session" below. **This is where to resume.**
 
 ## Files changed
 
@@ -121,40 +124,96 @@ action on resume is `build_vendor_boot_img.sh` then flash `vendor_boot_a`.
      controller wedge is unlikely to survive a fresh transfer — so pinmux alone
      may not be the whole story.
 
-## Open hypotheses for the dead bus (next steps)
+## 2026-06-27 live-probe session — narrowed to interrupt-or-electrical
 
-In rough priority:
+A full live probe on a fresh boot (device up on `/dev/ttyACM0`, charging) settled
+most of the open hypotheses. **The dead bus is NOT pinmux, NOT chip power, NOT the
+clock.** Findings, in order:
 
-1. **Clean-boot test of `func2`.** Live `devmemn` test sets the same final pad
-   state as `func2`, *but* the controller was probed at boot with the wrong pads;
-   reflash with `func2` so it inits correctly from cold. Cheapest definitive
-   test even though analysis suggests it may not be sufficient.
-2. **Read the i2c4 controller status register** to see actual SCL/SDA line state.
-   Controller base: DT `i2c@700000` reg `<0 0x700000 0 0x100>` — **resolve the
-   absolute address via the `apb@70000000` `ranges`** (was mid-lookup; the apb
-   ranges in `ums512.dtsi` need walking — i2c4 is not one of the already-listed
-   `0x323xxxxx`/`0x327xxxxx` sub-ranges, find the AP-APB one). Reg offsets:
-   `I2C_CTL=0x00, I2C_ADDR_CFG=0x04, I2C_COUNT=0x08, I2C_STATUS=0x14,
-   ADDR_DVD0=0x20, ADDR_DVD1=0x24`. `I2C_STATUS` bits (see `i2c-sprd.c` "/* I2C_STATUS */")
-   should reveal whether SDA/SCL are stuck low (chip holding / no effective pull)
-   or idle-high (electrically fine ⇒ controller/chip-ACK problem).
-3. **Mux SIMCLK2/SIMDA2 to GPIO input and read the line levels** to see if the
-   bus idles high (pull works) or is stuck low (no pull / chip clamps).
-4. **Charger chip power.** The AW32257's logic/VDDIO supply may be off in
-   mainline; if the chip holds the bus low, START never completes → `-110`. Check
-   what rail powers it (stock dtbo `charger@6a` had `phys=<&hsphy>`,
-   `extcon=<&extcon_gpio>`, an `otg-vbus` regulator — none wired in our node).
-5. **Wrong pads for THIS board.** pinmap.c is the reference IRD board
-   (`UMS512_1_IRD_A` per its header); RG Rotate could route i2c4 differently —
-   though i2c4 (AP I2C ctrl 4) can only surface on pads offering it as a func,
-   and SIMCLK2/SIMDA2 are the reference choice.
+1. **i2c4 controller absolute base = `0x00700000`** (confirmed via `/proc/iomem`:
+   `00700000-007000ff : 700000.i2c`; it is `i2c-4`). The `apb`/`soc` `ranges` are
+   genuinely identity (empty `ranges;`), so the DT `reg 0x700000` is literal — the
+   AP-APB peripherals really do sit at these low physical addresses. So
+   `I2C_STATUS = 0x00700014`. **BUT** `devmemn` of `0x700000` returns fixed garbage
+   (`0x7911193e`/`0x50e2f75b`) idle *and* mid-transfer — almost certainly
+   `CONFIG_STRICT_DEVMEM` blocking this low (~7 MB) physical range (devmem reads
+   the high `0x32450000` pinctrl block fine). **So I2C_STATUS is NOT readable via
+   devmem** — need a kernel-side dump instead (see next steps).
+
+2. **Live boot was running the stale/wrong pinmux** (as predicted — `func2` DTS not
+   reflashed): mux regs `0x324500b0/b4 = 0x0` (AF0), debugfs showed
+   `function func1` on SIMCLK2/SIMDA2. Forced AF1 live (`0x10` to both mux regs)
+   + WPUS|WPU (`0x83088` to both MISC regs), confirmed readback → **probe to 0x6a
+   STILL `-110`/ETIMEDOUT.** Pinmux is not sufficient. (Reflashing `func2` is still
+   worth doing for a clean baseline, but will not by itself fix the bus.)
+
+3. **Pads are the correct ones for THIS board.** `ums512_1h10/pinmap.c` confirms
+   `REG_PIN_SIMCLK2/SIMDA2 = BITS_PIN_AF(1)  //I2C4_SCL/SDA`. (Note: sharkl5pro
+   *phone* boards like `sp9861e_*` use dedicated `REG_PIN_SCL4/SDA4` instead — a
+   red herring; our handheld board uses SIMCLK2/SIMDA2 like the sp9863a family.)
+
+4. **Chip power is fine.** Kernel cmdline shows `androidboot.mode=charger` +
+   `bootcause="in charging during shutdown"` — the AW32257 is powered and charging
+   the battery autonomously right now. Rules out the "VDDIO off / chip unpowered"
+   hypothesis.
+
+5. **The functional clock is on during transfers.** `clk_summary` sampled while a
+   background probe loop kept the bus busy: `i2c4-eb` enable_cnt=1, `Y`, consumer
+   `700000.i2c`; `ap-i2c4-clk` `Y` @ 26 MHz. So the controller is clocked.
+
+6. **The completion interrupt NEVER fires.** `/proc/interrupts`: i2c4 is
+   `19: 0 0 0 0 0 0 0 0  GICv3 47 Level  700000.i2c` — **0 counts on all CPUs**,
+   even after this session ran dozens of probe transfers. The sprd i2c driver
+   (`i2c-sprd.c`) completes via `wait_for_completion_timeout` driven by the ISR, so
+   **0 interrupts ⇒ guaranteed `-110` on every address** (matches the symptom: all
+   addresses time out identically).
+
+### Remaining ambiguity: interrupt path vs. electrically-stuck bus
+
+0 interrupts is consistent with BOTH:
+- **(A) interrupt broken/masked** — controller transacts but the IRQ never reaches
+  the CPU (GIC SPI 15 = hwirq 47 mapping looks correct & is registered to
+  700000.i2c, so this would be a mask/routing/affinity issue), OR
+- **(B) bus electrically stuck** — a line held low (no effective external pull, or
+  the chip clamping), so the controller never wins bus-free/START, never completes,
+  never raises its done/error IRQ.
+
+devmem can't read `I2C_STATUS` to tell these apart (STRICT_DEVMEM). The two cheap
+ways forward:
+
+1. **Kernel-side `I2C_STATUS` dump (recommended).** We rebuild `vendor_boot`
+   anyway — add a one-line `dev_err` in the timeout branch of `sprd_i2c_xfer`/the
+   completion-timeout path in `drivers/i2c/busses/i2c-sprd.c` dumping `I2C_STATUS`
+   (offset 0x14) and `I2C_CTL`. Bits (see the `/* I2C_STATUS */` defs in that file)
+   reveal SDA/SCL line state + busy/arb-lost → distinguishes (A) vs (B)
+   definitively. Bundle with the `func2` reflash so it's one boot.
+2. **GPIO line-level read** — mux SIMCLK2/SIMDA2 to GPIO input and read levels
+   (idle-high ⇒ pulls OK, favors (A); stuck-low ⇒ favors (B)). More fiddly than
+   the kernel dump.
+
+If (A): check GIC config for SPI 15 / IRQ affinity / whether the driver actually
+unmasks the controller IRQ enable bits. If (B): the SLP_* bits in the stock MISC
+config (`BIT_PIN_SLP_AP|BIT_PIN_SLP_WPU|BIT_PIN_SLP_Z`, which our DT pull setting
+omits) or a missing board-level external pull-up are the leads.
+
+### Older hypotheses now CLOSED by the above
+- ~~Clean-boot `func2` test~~: necessary baseline but proven insufficient (item 2).
+- ~~Wrong pads for this board~~: closed, pads confirmed (item 3).
+- ~~Charger chip power off~~: closed, chip is powered/charging (item 4).
 
 ## Useful device-side workflow
 
 - **Serial console** is bash on `/dev/ttyACM0` (autologin root). readline garbles
-  fast writes — drive it byte-by-byte (~15 ms/char) with a leading Ctrl-U +
-  throwaway space. Reusable helper used this session lived at
-  `/tmp/.../scratchpad/tac.sh` (per-session scratch; recreate as needed).
+  writes badly, and worse when **bracketed-paste mode** is on. What actually worked
+  this session: (1) `stty -F /dev/ttyACM0 raw -echo 115200`; (2) hold the port open
+  on one fd (`exec 3<>port`) instead of reopening per byte; (3) **send each char
+  with a `sleep` and a leading Ctrl-U (0x15)** to clear the line — `0.04 s/char`
+  for short cmds, `0.07 s/char` for long/quoted ones (length, not just speed,
+  drives garbling — likely half-duplex echo contention on the ACM pipe);
+  (4) **disable bracketed paste once**: `bind 'set enable-bracketed-paste off'`.
+  Read with a backgrounded `timeout N cat /dev/ttyACM0 > log`, then strip with
+  `tr -d '\000' | sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g'`. Long single lines with many
+  `;`/quotes still corrupt — prefer short sends or drop a script onto the device.
 - **`devmemn <addr> [val]`** on target: read (addr only) / write (addr+val) MMIO.
 - **No i2c-tools**, but **perl** is present — userspace bus probe:
   ```
