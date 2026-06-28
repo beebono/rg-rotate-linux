@@ -42,11 +42,11 @@ chronology and dead ends in [docs/WHAT-HAS-BEEN-TRIED.md](docs/WHAT-HAS-BEEN-TRI
   - *Sensors:* all 3 `sprd,ums512-thermal` controllers (`ap_thm0/1/2`) probe, 12 `thermal_zone*` report sane calibrated temps (CPU clusters/cores, GPU). DT (nodes + efuse cal cells + zones) was already complete in `ums512.dtsi`; efuse shadow at reserved-mem `nvmem@800` is populated so `sen_delta_cal` calibration works.
   - *cpufreq:* register-level `sprd,sharkl5pro-cpudvfs` engine ported (4.14 vendor → 6.16) and **working on-device**: `policy0` = cpu0-5 (A55, 614MHz–1.82GHz), `policy6` = cpu6-7 (A75, 1.23–2.002GHz), schedutil scaling. `CONFIG_ARM_SPRD_CPUFREQ_HW=y`. The in-tree `sprd-cpufreq-v2` SMCCC-SIP path was a dead end here (stock firmware returns NOT_SUPPORTED for `SPRD_SIP_SVC_DVFS_*`). See [docs/CPUFREQ-PORT-PLAN.md](docs/CPUFREQ-PORT-PLAN.md).
   - *Thermal throttling — DONE.* The cpufreq driver sets `CPUFREQ_IS_COOLING_DEV`, so the core registers a cooling device per policy (`cpufreq-cpu0`, `cpufreq-cpu6`). The per-cluster `cooling-maps` reference the policy-leader CPUs (`&CPU0`/`&CPU6` — one cooling dev per policy, shared cluster clock), so the 70 °C passive trips now cap cluster frequency; 110 °C critical trip remains the shutdown backstop. (`No trip points found for thermal id=0` is benign — the trip-less `gpu`/`gpuank2` monitor-only zones.)
-- [ ] Audio
-- [ ] GPU
-- [ ] Wi-Fi / Bluetooth
-- [ ] Input
+- [x] GPU — **Mali-G52 (Bifrost MP2) live under mainline panfrost (built-in).** Added `gpu@60000000` to `ums512.dtsi` (compatible `sprd,ums512-mali`/`arm,mali-bifrost`, IRQ 60 ×3, `gpu_clk` core/mem/bus, `&pmu UMS512_POWER_DOMAIN_GPU_TOP`, reset, `vddgpu`, OPP 384–850 MHz), enabled in `ums512-1h10.dts`, plus a `sprd,ums512-mali` match in `panfrost_drv.c`; `CONFIG_DRM_PANFROST=y`. Validated on-device: `mali-g52 id 0x7402`, `shader_present=0x3`, `/dev/dri/renderD128`; devfreq enumerates all 5 OPPs (`simple_ondemand`, auto-ramps off the 26 MHz boot default to 384 MHz); a direct uAPI smoke test (GET_PARAM + CREATE_BO → nonzero GPU VA + mmap readback) passes, confirming the GEM/MMU datapath. **Key fix:** a latent bug in `drivers/clk/sprd/ums512-clk.c` — `ums512_clk_probe` used `platform_get_drvdata()` (a `sprd_clk_drvdata *`) directly as the reset `regmap`, so the GPU's reset-deassert (the first ums512 node to request a reset) panicked with PC=`0x0` in `sprd_reset_deassert`; fixed to `data->regmap` (matches `ums9230-clk.c`) — candidate for upstreaming. Still untested: actual shader execution via `SUBMIT` (needs mesa/panfrost userspace, not yet installed — no network on device).
 - [ ] SD card
+- [ ] Wi-Fi / Bluetooth
+- [ ] Audio
+- [ ] Input
 - [ ] Sensors (only Hall-sensor expected, likely has accel/gyro though)
 - [ ] USB host / OTG — gadget works; cold-boot enum `-71` deep-dive in [docs/WHAT-HAS-BEEN-TRIED-USB.md](docs/WHAT-HAS-BEEN-TRIED-USB.md)
 - [ ] UART clocks
