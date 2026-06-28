@@ -26,3 +26,13 @@
 	path = src/linux-6-16-sprd
 	url = https://github.com/beebono/linux-6-16-sprd.git
 	branch = ums512
+[submodule "vendor/android-kernel-rp2p"]
+	path = vendor/android-kernel-rp2p
+	url = https://github.com/turtleletortue/android_kernel_retroid_pocket2plus.git
+	branch = android-9.0
+[submodule "vendor/linux-kernel-5-4-ums512"]
+	path = vendor/linux-kernel-5-4-ums512
+	url = https://github.com/marohinmark/kernel_ums512_5.4.git
+[submodule "vendor/linux-kernel-4-14-sprd"]
+	path = vendor/linux-kernel-4-14-sprd
+	url = https://github.com/strongtz/linux-sprd.git
