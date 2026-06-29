@@ -36,3 +36,6 @@
 [submodule "vendor/linux-kernel-4-14-sprd"]
 	path = vendor/linux-kernel-4-14-sprd
 	url = https://github.com/strongtz/linux-sprd.git
+[submodule "src/linux-7-1-sprd"]
+	path = src/linux-7-1-sprd
+	url = https://github.com/beebono/linux-mainline-sprd.git

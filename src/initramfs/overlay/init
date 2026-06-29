@@ -2,6 +2,34 @@
 mount -t proc none /proc
 mount -t sysfs none /sys
 mount -t devtmpfs devtmpfs /dev
+mkdir -p /tmp /sys/fs/pstore
+
+capture_pstore() {
+	src=/sys/fs/pstore
+	dst="$1"
+	found=0
+
+	[ -d "$dst" ] || mkdir -p "$dst"
+
+	if ! grep -qs " $src " /proc/mounts 2>/dev/null; then
+		mount -t pstore pstore "$src" 2>/dev/null || return 1
+	fi
+
+	for f in "$src"/*; do
+		[ -e "$f" ] || continue
+		found=1
+		cp -a "$f" "$dst"/ 2>/dev/null
+	done
+
+	if [ "$found" = 1 ]; then
+		echo "initramfs: copied pstore logs to $dst" > /dev/kmsg 2>/dev/null
+		return 0
+	fi
+
+	return 1
+}
+
+capture_pstore /tmp/pstore-early
 
 WD_PETTERS=""
 for w in /dev/watchdog /dev/watchdog0 /dev/watchdog1 /dev/watchdog2 /dev/watchdog3; do
@@ -42,6 +70,7 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
 done
 
 if [ "$mounted" = 1 ] && [ -x "$NEWROOT/lib/systemd/systemd" ]; then
+	capture_pstore "$NEWROOT/var/log/pstore-early"
 	echo "initramfs: switching root to $ROOTDEV" > /dev/kmsg 2>/dev/null
 	# Stop the initramfs watchdog petters; they would otherwise survive
 	# switch_root (reparented to the new init), busy-spin, and hold the
