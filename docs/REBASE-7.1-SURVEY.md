@@ -189,4 +189,45 @@ Upstream is **not ahead** on the audio wall and in fact TRIMMED the path:
 - **Local commits on `rg-rotate` (NOT pushed yet — pushing when nearer 6.16
   parity):** board+hwspinlock, gpio+pinctrl, defconfig(+real-6.16 rebase),
   i2c+charger, usb+hsphy(+coldboot phy fix), mmc aliases, display-DT+panel-driver,
-  display-drivers. Remaining: GPU, cpufreq, audio (feature ports next session).
+  display-drivers. Remaining: audio (feature port next session).
+- **cpufreq ported (DONE — CONFIRMED on-device: policy0=cpu0-5, policy6=cpu6-7, schedutil).**
+  Caught a regression on first flash: upstream 7.1's `cpu-map` lumps all 8 cores
+  under one `cluster0`, collapsing both DVFS clusters into a single policy
+  (`topology_cluster_id`==0 for all). Fixed the cpu-map back to the two-cluster
+  split in ums512.dtsi; DTB-only repack.
+  CORRECTION to section B's "prefer upstream sprd-cpufreq-v2": v2 is a CONFIRMED
+  DEAD END on this device — stock firmware returns NOT_SUPPORTED for every
+  `SPRD_SIP_SVC_DVFS_*` (memory `thermal-cpufreq-bringup`). 7.1 ships ONLY v2, so
+  the working register-level engine was ported instead: 5 driver files
+  (`sprd-cpufreqhw` + `sprd-hwdvfs-normal` + `-archdata` + `sprd-cpufreq-common` +
+  `sprd-sysfs-normal`, `CONFIG_ARM_SPRD_CPUFREQ_HW=y`) copied wholesale — they
+  COMPILE CLEAN against the 7.1 cpufreq core (no API drift; only pre-existing
+  -Wmissing-prototypes) and carry the load-bearing `topology_cluster_id` fix. DT
+  into ums512.dtsi: `cpufreq_clus0/1` + `scu/periph/gic` OPP-data nodes, per-CPU
+  `cpufreq-data-v1` + capacity/cooling props on CPU0-7, the rich
+  `topdvfs_controller`/`top_dvfs_apb_regs` node (sharkl5pro-topdvfs compatible +
+  `dcdc_cpu0/1/mm/modem` cells), and the `cpudvfs_dev@322a8000` megablock
+  (lit/big/scu/periph/gic clusters + mpll/apcpu cells). Board: `dvfs_dcdc_cpu0/1`
+  supplies + `&dcdc_cpu0/1` mode-cfg + `&cpudvfs_dev` okay. dtb phandles verified
+  resolved (cpudvfs_dev okay, cpufreq-data-v1, dcdc-supply-mode-cfg); full Image
+  links clean. NOTE: left 7.1's single `CORE_PD` cpuidle as-is (did not port
+  6.16's LIT/BIG_CORE_PD split). Untested: per-cluster policy creation on silicon.
+- **GPU panfrost ported (DONE — CONFIRMED on-device: panfrost 1.6.0, mali-g52
+  id 0x7402, shader_present=0x3).** NOTE `mali-supply=<&vddgpu>` belongs in the
+  BOARD &gpu override, not the shared dtsi (else the generic ums512-1h10.dtb,
+  which has no SC2730, fails to resolve vddgpu). The section-B
+  worry resolved itself: the reset reorg ELIMINATED our 6.16 drvdata bug — 7.1's
+  reset registration lives in each SoC clk driver's probe (model: `ums9230-clk.c`,
+  `reset->regmap = data->regmap`), not the buggy `platform_get_drvdata` cast.
+  Carried into `ums512-clk.c`: `ums512_gpu_apb_resets[]` map (identical reg/bits
+  to ums9230), `.resets`/`.num_resets` on the gpu desc, and the reset-controller
+  registration block; `#reset-cells` added to the gpu_clk node. The pmu
+  power-controller was MISSING from 7.1 (upstream dropped ums512) — restored
+  `sprd,ums512-power.h` + `ums512-pm-domains.h` + the pm-domains.c match entry
+  (driver core byte-identical to 6.16) and the `pmu: power-controller`
+  (GPU_TOP/MM/PUBCP) node in the dtsi. SoC `gpu@60000000` + `gpu_opp_table`
+  ported; board `&gpu` un-staged. panfrost_drv.c: one match line
+  `sprd,ums512-mali` → upstream `default_pm_rt_data` (identical to our old
+  custom `unisoc_ums512_data`, so no custom struct needed). dtb phandles verified
+  resolved; objects + dtb build clean. Configs DRM_PANFROST + SPRD_PM_DOMAINS
+  already in defconfig.
