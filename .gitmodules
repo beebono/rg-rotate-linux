@@ -18,10 +18,6 @@
 	path = vendor/u-boot-ums512
 	url = https://github.com/beebono/u-boot-ums512.git
 	branch = main
-[submodule "src/u-boot-sprd"]
-	path = src/u-boot-sprd
-	url = https://github.com/beebono/u-boot-sprd.git
-	branch = rg-rotate
 [submodule "src/linux-6-16-sprd"]
 	path = src/linux-6-16-sprd
 	url = https://github.com/beebono/linux-6-16-sprd.git
@@ -39,4 +35,11 @@
 [submodule "src/linux-7-1-sprd"]
 	path = src/linux-7-1-sprd
 	url = https://github.com/beebono/linux-mainline-sprd.git
+	branch = rg-rotate
+[submodule "src/u-boot-sprd"]
+	path = src/u-boot-sprd
+	url = https://codeberg.org/beebono/u-boot-sprd.git
+[submodule "src/u-boot-old"]
+	path = src/u-boot-old
+	url = https://github.com/beebono/u-boot-sprd.git
 	branch = rg-rotate
