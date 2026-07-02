@@ -97,7 +97,7 @@ action on resume is `build_vendor_boot_img.sh` then flash `vendor_boot_a`.
 
 3. **i2c4 pads identified.** UMS512 has **no** dedicated SCL4/SDA4 pads. From the
    vendor u-boot board pinmap
-   `vendor/u-boot-unisoc-bsp/board/spreadtrum/ums512_1h10/pinmap.c`:
+   `src/u-boot/board/spreadtrum/ums512_1h10/pinmap.c`:
    `REG_PIN_SIMCLK2 = BITS_PIN_AF(1)  //I2C4_SCL`,
    `REG_PIN_SIMDA2  = BITS_PIN_AF(1)  //I2C4_SDA`, both MISC `WPUS|WPU`.
    (That file is **ISO-8859 encoded** — plain `grep` silently misses lines, use

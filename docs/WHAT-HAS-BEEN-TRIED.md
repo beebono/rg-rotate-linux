@@ -161,7 +161,7 @@ A static diff of the **vendor U-Boot panel-light path** against the kernel
 cold-init `prepare` found an **inverted bridge/panel ordering** that plausibly
 explains the entire cold-init failure. Vendor U-Boot is the same BSP as the
 stock U-Boot doing the working handoff, and its panel logic is DT-driven source
-we can read directly (`vendor/u-boot-unisoc-bsp/drivers/video/sprd/`).
+we can read directly (`src/u-boot/drivers/video/sprd/`).
 
 **Vendor order (`sprd_panel_probe` -> `panel_ops_mipi.c`), one linear function:**
 `power(true)` (rails + reset high50/low50/high120) -> `read_id()` -> `init()`,
@@ -277,7 +277,10 @@ on their own merits.
 - **No UART pad exists** (case opened, confirmed). The only interactive channel is
   kernel USB CDC-ACM (`0525:a4a7` → host `/dev/ttyACM0`), available once Linux boots.
   Vendor U-Boot console is on UART0 (no pad); its only interactive USB channel is
-  fastboot (`18d1:4ee0`). `src/u-boot/` shows no liveness and is parked.
+  fastboot (`18d1:4ee0`). (The mainline-ish U-Boot fork that used to be parked
+  at `src/u-boot-sprd` showed no liveness on this hardware at all and has been
+  dropped — see [BOOT-CHAIN.md](BOOT-CHAIN.md). `src/u-boot/` is now the vendor
+  BSP fork, the tree actively being taught extlinux hand-off.)
 - **USB serial can drop on a bad power/enumeration state.** After a flash, a full
   power-off→power-on (not warm reset) is required; if `ttyACM0` doesn't enumerate,
   power-cycle again before assuming a regression.

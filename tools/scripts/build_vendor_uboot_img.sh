@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-UBOOT_DIR="${UBOOT_DIR:-$REPO_ROOT/vendor/u-boot-ums512}"
+UBOOT_DIR="${UBOOT_DIR:-$REPO_ROOT/src/u-boot}"
 OUT_DIR="${OUT_DIR:-$UBOOT_DIR/out-test}"
 DEFCONFIG="${DEFCONFIG:-ums512_1h10_defconfig}"
 DEVICE_TREE="${DEVICE_TREE:-ums512_1h10}"

@@ -15,7 +15,13 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO_ROOT / "vendor" / "unisoc-anber-patch" / "tools"))
+for tool_dir in (
+    REPO_ROOT / "vendor" / "unisoc-anber-patch" / "tools",
+    REPO_ROOT / "vendor" / "spl-uboot-patch" / "tools",
+):
+    if tool_dir.is_dir():
+        sys.path.insert(0, str(tool_dir))
+        break
 
 from rehash import rehash  # type: ignore  # noqa: E402
 

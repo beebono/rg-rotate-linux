@@ -23,12 +23,12 @@ git submodule update --init --recursive
 | Path | What |
 |------|------|
 | `src/linux-6-16-sprd/` | Linux 6.16 SPRD-flavored kernel fork (branch `ums512`) — **boots the device**, default target for the recipes below |
-| `src/u-boot-sprd/` | Mainline-ish SPRD U-Boot (branch `rg-rotate`) — parked/experimental cleaner boot chain |
+| `src/linux-7-1-sprd/` | Linux 7.1 rebase target (branch `rg-rotate`, off Otto Pflüger's codeberg `ums9230-mainline` line) — see [docs/REBASE-7.1-SURVEY.md](docs/REBASE-7.1-SURVEY.md) |
+| `src/u-boot/` | Vendor U-Boot BSP fork (`ums512_1h10` board target) — teaching it to light the panel and hand off via `extlinux`; the canonical U-Boot tree (see [docs/BOOT-CHAIN.md](docs/BOOT-CHAIN.md)) |
 | `src/busybox/` | busybox source for the initramfs |
 | `src/initramfs/` | initramfs overlay + reproducible build script (see [src/initramfs/README.md](src/initramfs/README.md)) |
 | `src/rootfs-build/` | Debian rootfs image build scripts (see [src/rootfs-build/README.md](src/rootfs-build/README.md)) |
 | `src/panel-generic-dsi/` | panel module implementation / bring-up workspace |
-| `vendor/u-boot-ums512/` | vendor U-Boot BSP — extlinux experiment (see [docs/BOOT-CHAIN.md](docs/BOOT-CHAIN.md)) |
 | `vendor/android-kernel-ums512/` | vendor Android BSP kernel — register-level reference |
 | `vendor/spl-uboot-patch/` | AVB/unlock/secure-boot-bypass toolkit |
 | `vendor/bootloader-unlock/` | Unisoc bootloader unlock tooling |
@@ -68,6 +68,28 @@ PYTHONPATH=tools/mkbstub mkbootimg --header_version 4 \
 
 For a quick repack of just the DTB into vendor_boot, use
 `tools/scripts/build_vendor_boot_img.sh`.
+
+```bash
+# Vendor U-Boot (src/u-boot, ums512_1h10 board target) — panel-init + extlinux work
+make -C src/u-boot \
+  O="$PWD/build/out/u-boot-vendor" \
+  ARCH=arm \
+  CROSS_COMPILE=aarch64-linux-gnu- \
+  ums512_1h10_defconfig \
+&& make -C src/u-boot \
+  O="$PWD/build/out/u-boot-vendor" \
+  ARCH=arm \
+  CROSS_COMPILE=aarch64-linux-gnu- \
+  -j"$(nproc)" \
+&& python3 tools/scripts/pack_unisoc_uboot.py \
+  device/stock/dump/uboot_a.img \
+  build/out/u-boot-vendor/u-boot-dtb.bin \
+  build/uboot/uboot_a_vendor_ums512_1h10.img
+```
+
+`tools/scripts/build_vendor_uboot_img.sh` wraps the same three steps and prints
+the matching `spd_dump write_part uboot_a ...` command. See
+[docs/BOOT-CHAIN.md](docs/BOOT-CHAIN.md) for the extlinux porting status.
 
 Notes:
 - USB serial needs `g_serial`, `u_serial`, and `f_acm` built in.
