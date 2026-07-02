@@ -270,6 +270,27 @@ Upstream is **not ahead** on the audio wall and in fact TRIMMED the path:
   - `Image` + both `ums512-1h10.dtb`/`ums512-rg-rotate.dtb` build clean;
     `ums512_defconfig` regenerated via `savedefconfig` (adds
     `SND_SOC_AW87390`, `SPRD_AUDCP_BOOT`).
-  - **NOT YET DONE:** flashing and re-running the `mux_dac_out` / IIS-master
-    experiments from [[audio-bringup]] session 5 — the underlying "DAC never
-    clocks real samples" bug is unchanged, only the platform moved to 7.1.
+  - **Flash-tested (2026-07-02): boots clean, no panic.** dmesg showed a
+    couple of benign audio-side deferred probes (expected dependency
+    ordering, not an error). **NOT YET DONE:** re-running the
+    `mux_dac_out` / IIS-master experiments from [[audio-bringup]] session 5
+    — the underlying "DAC never clocks real samples" bug is unchanged, only
+    the platform moved to 7.1.
+- **Thermal ported (DONE — confirmed on-device 2026-07-02).** The cache-efuse
+  nvmem shadow (calibration cells only; dropped the unused DVFS-bin cells -
+  nothing references them on either kernel), `ap_thm0/1/2` sensor
+  controllers, and the 12-zone `thermal-zones` block (70°C passive / 110°C
+  critical, wired to the cpufreq cooling devices: CPU0 = little-cluster
+  leader, CPU6 = big) were missing from 7.1 entirely — the cpufreq driver's
+  cooling-device registration had nothing to attach to (no throttle, no
+  shutdown backstop). All 12 zones now report calibrated temps (22-58°C
+  range) and `cooling_device0-2` register. DT-only change, flashed via
+  `vendor_boot_a`.
+  - **Watchdog is a known remaining gap, deferred pending complexity
+    survey.** `CONFIG_SPRD_WATCHDOG=y` is compiled in but there's no DT node,
+    so `/dev/watchdog0` never appears and `hw-watchdog.service` can't feed
+    it. Checked `sprd_wdt.c`: the hardware counter only starts when
+    something opens the device node (`sprd_wdt_start()`, not armed by
+    bootloader/probe), so this is **not** a ticking-timebomb risk — its
+    absence just means no auto-recovery from a kernel hard-hang, not a
+    latent reboot.
