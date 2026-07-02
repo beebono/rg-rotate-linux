@@ -231,3 +231,45 @@ Upstream is **not ahead** on the audio wall and in fact TRIMMED the path:
   custom `unisoc_ums512_data`, so no custom struct needed). dtb phandles verified
   resolved; objects + dtb build clean. Configs DRM_PANFROST + SPRD_PM_DOMAINS
   already in defconfig.
+- **Audio ported (DONE — builds clean, NOT YET FLASH-TESTED).** All feature
+  ports from 6.16 landed:
+  - `vbc-v4-dsp.c`/`.h`, `ums9230-digital.c`, `sprd-mcdt.c`, `ums9230-card.c`
+    carried wholesale from 6.16 (SDM init, `mux_dac_out`/IIS-master kcontrols,
+    clk_bulk + pm_runtime supply-event fix, r1p0 MCDT compat + FE_VOICE dailink).
+    Two real API-drift fixes needed on top: `snd_soc_dapm_kcontrol_dapm` →
+    `snd_soc_dapm_kcontrol_to_dapm` (renamed upstream), and dropped the
+    `dma_data->hw_channels = 1` write (the field no longer exists —
+    `sprd-pcm-dma.c` derives channel count from `params_access()` instead).
+  - `sc2730.c` and `sprd-pcm-dma.c` needed **no changes** — upstream's versions
+    are supersets/equivalents already. Do NOT re-add the AUDIF soft-reset
+    (upstream tried and dropped it independently; confirmed dead end). Our
+    6.16 pcm-dma.c guards (duplicate-submit check, residue-range fallback,
+    desc/cookie reset on release) were reviewed in [[audio-bringup]] as
+    non-blocking debug band-aids, not load-bearing — and porting them would
+    have reintroduced the removed `hw_channels` field and fought the newer
+    `u64` compress-API types, so 7.1's leaner file was kept as-is.
+  - `sprd-audcp-boot.c` was **entirely missing upstream** (only `sprd-agdsp.c`
+    IPC existed) — ported wholesale + `Kconfig`/`Makefile` (`SPRD_AUDCP_BOOT`).
+  - DT: `agdsp`/`audcp_boot`/`vbc`/`sprd_pcm` top-level nodes and
+    `mailbox@320a0000`/`mcdt@33490000`/`agcp_dma@33580000`/
+    `audio-codec@33750000` (dig_codec) SoC nodes ported into `ums512.dtsi`.
+    Their `memory-region` properties were deliberately left off the shared
+    dtsi (mirrors the `&gpu`/`mali-supply` split — the generic
+    `ums512-1h10.dtb` has no reserved-memory carveouts and its `dtbs` build
+    failed with phandle errors until this was board-scoped) and are instead
+    set via `&agdsp`/`&audcp_boot`/`&vbc`/`&sprd_pcm` overrides in the board
+    dts, alongside the four reserved-memory regions (audio DMA pool, DSP
+    dump scratch, AGDSP smem, DSP firmware) added to the board's
+    `reserved-memory` node.
+  - **Speaker amp correction:** the old 6.16 `aw87391.c` shim driver was
+    ported first, then discarded — upstream's `aw87390.c` gained a dedicated
+    `anbernic,rgds-amp` compatible (`soc_codec_dev_anbernic_rgds` match_data)
+    carrying the *exact* undocumented AW87391 register sequence this
+    handheld needs, driven purely over i2c with no `enable-gpios`. Board now
+    uses `compatible = "anbernic,rgds-amp"` on the `i2c2` amp node instead.
+  - `Image` + both `ums512-1h10.dtb`/`ums512-rg-rotate.dtb` build clean;
+    `ums512_defconfig` regenerated via `savedefconfig` (adds
+    `SND_SOC_AW87390`, `SPRD_AUDCP_BOOT`).
+  - **NOT YET DONE:** flashing and re-running the `mux_dac_out` / IIS-master
+    experiments from [[audio-bringup]] session 5 — the underlying "DAC never
+    clocks real samples" bug is unchanged, only the platform moved to 7.1.
