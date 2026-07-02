@@ -72,7 +72,7 @@ everything downstream is proven to work. The remaining suspects, all at or aroun
 the AUDIF interface:
 
 1. **sc2730 DAC input not selected to AUDIF**, or the PMIC-side AUDIF *receiver* is
-   not enabled. Mainline [sc2730.c](../src/linux-6-16-sprd/sound/soc/codecs/sc2730.c)
+   not enabled. Mainline [sc2730.c](../src/linux-7-1-sprd/sound/soc/codecs/sc2730.c)
    wires the AUDIF clock supplies (`CLK_AUDIF`, `CLK_AUDIF_6M5`, `CLK_AUD_SCLK`,
    `CLK_TOPA_6M5`) as DAPM supplies and writes `AUD_AUDIF_CTL0 = 0` at probe, but we
    have **not verified on silicon** that the AUDIF receiver path is actually live
@@ -91,7 +91,7 @@ the AUDIF interface:
 - **AUDIF soft-reset** (vendor does it on every codec power-up; mainline never did):
   added a `POST_PMU` pulse of `AUD_CFGA_SOFT_RST` (reg `0x0104`, bits
   `DAC_POST_SOFT_RST|DIG_6P5M_SOFT_RST = 0x6`) on the `CLK_TOPA_6M5` supply in
-  [sc2730.c](../src/linux-6-16-sprd/sound/soc/codecs/sc2730.c). Built, flashed —
+  [sc2730.c](../src/linux-7-1-sprd/sound/soc/codecs/sc2730.c). Built, flashed —
   amplitude test still identical.
 - **`aud_top` digital codec** is correctly programmed during a stream (verified via
   regmap-debugfs, no devmem): `AUD_TOP_CTL(0x00)=0x5` (DAC L+R on),
@@ -111,7 +111,7 @@ the AUDIF interface:
   (`sprd_agdsp_send_cmd` returns 0). The `supp-outbox` ENXIO at boot is cosmetic
   (optional 3rd IRQ, unused on ums512).
 - **Startup-param struct layout.** Mainline
-  [vbc-v4-dsp.c](../src/linux-6-16-sprd/sound/soc/sprd/vbc-v4-dsp.c)
+  [vbc-v4-dsp.c](../src/linux-7-1-sprd/sound/soc/sprd/vbc-v4-dsp.c)
   `vbc_startup_params` matches the vendor's `{stream_info + snd_pcm_startup_paras}`
   *positionally* field-for-field (`name32/fe_id/stream` → `stream_info`;
   `tx_id/rx_id/ref_rx_id` → `dac/adc/ref_adc id`; `rx_source/tx_out` →
@@ -137,13 +137,13 @@ the AUDIF interface:
 
 ## Driver changes made this session (all in tree, boot_a only unless noted)
 
-- [vbc-v4-dsp.c](../src/linux-6-16-sprd/sound/soc/sprd/vbc-v4-dsp.c): kcontrols
+- [vbc-v4-dsp.c](../src/linux-7-1-sprd/sound/soc/sprd/vbc-v4-dsp.c): kcontrols
   `VBC IIS Master Enable` / `VBC IIS Master Width 24bit` / `VBC IIS0 Master Internal`
   / `VBC DAC0 Out VBCIF`; these write both the live KCTL and the startup params.
   *(Infra — kept, but proven not the tone gate.)*
-- [sc2730.c](../src/linux-6-16-sprd/sound/soc/codecs/sc2730.c): AUDIF soft-reset
+- [sc2730.c](../src/linux-7-1-sprd/sound/soc/codecs/sc2730.c): AUDIF soft-reset
   (`sc2730_audif_reset_event`, `POST_PMU` on `CLK_TOPA_6M5`).
-- [sprd-pcm-dma.c](../src/linux-6-16-sprd/sound/soc/sprd/sprd-pcm-dma.c): dropped the
+- [sprd-pcm-dma.c](../src/linux-7-1-sprd/sound/soc/sprd/sprd-pcm-dma.c): dropped the
   cosmetic "invalid dma pointer" warning (single-channel cyclic `tx_status` quirk;
   returns position 0 quietly).
 
@@ -158,7 +158,7 @@ Ordered by promise:
    that the AUDIF RX is enabled, *during a stream*. The sc2730 audio regs live behind
    the ADI/PMIC bus and are not in regmap-debugfs — need a debug read path (extend a
    tool, or a temporary `regmap_read` dump in
-   [sc2730.c](../src/linux-6-16-sprd/sound/soc/codecs/sc2730.c)) to inspect
+   [sc2730.c](../src/linux-7-1-sprd/sound/soc/codecs/sc2730.c)) to inspect
    `AUD_AUDIF_CTL0`, the DAC enable/mux, and `AUD_CFGA_*` status during playback, and
    diff against the vendor's expected values.
 2. **Chase the AGCP/AON 48 kHz DA clock.** Both symptoms (DSP free-run + dead AUDIF)

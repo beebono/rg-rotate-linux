@@ -3,9 +3,10 @@
 Mainline Linux on the Anbernic RG Rotate handheld. Board: `ums512_1h10`
 (Unisoc T618 / UMS512, sharkl5pro), A/B partitions, originally Android 12.
 
-**Mainline 6.16 boots a Debian 12 rootfs on eMMC with a working USB serial
+**Mainline 7.1 boots a Debian 12 rootfs on eMMC with a working USB serial
 console and a live panel.** For the current per-subsystem status and bring-up
-detail, see **[DEVICE-BRINGUP.md](DEVICE-BRINGUP.md)**.
+detail, see **[DEVICE-BRINGUP.md](DEVICE-BRINGUP.md)** and
+**[docs/REBASE-7.1-SURVEY.md](docs/REBASE-7.1-SURVEY.md)**.
 
 ## Clone
 
@@ -22,8 +23,7 @@ git submodule update --init --recursive
 
 | Path | What |
 |------|------|
-| `src/linux-6-16-sprd/` | Linux 6.16 SPRD-flavored kernel fork (branch `ums512`) — **boots the device**, default target for the recipes below |
-| `src/linux-7-1-sprd/` | Linux 7.1 rebase target (branch `rg-rotate`, off Otto Pflüger's codeberg `ums9230-mainline` line) — see [docs/REBASE-7.1-SURVEY.md](docs/REBASE-7.1-SURVEY.md) |
+| `src/linux-7-1-sprd/` | Linux 7.1 SPRD-flavored kernel fork (branch `rg-rotate`, off Otto Pflüger's codeberg `ums9230-mainline` line) — **boots the device**, default target for the recipes below. Board is `ums512-rg-rotate` (see [docs/REBASE-7.1-SURVEY.md](docs/REBASE-7.1-SURVEY.md)) |
 | `src/u-boot/` | Vendor U-Boot BSP fork (`ums512_1h10` board target) — teaching it to light the panel and hand off via `extlinux`; the canonical U-Boot tree (see [docs/BOOT-CHAIN.md](docs/BOOT-CHAIN.md)) |
 | `src/busybox/` | busybox source for the initramfs |
 | `src/initramfs/` | initramfs overlay + reproducible build script (see [src/initramfs/README.md](src/initramfs/README.md)) |
@@ -39,29 +39,38 @@ git submodule update --init --recursive
 | `device/` | stock dumps, extracted firmware, flashable images (gitignored — local) |
 | `build/` | generated images and scratch outputs (gitignored) |
 
+The earlier Linux 6.16 fork (branch `ums512`, board `ums512-1h10`) has been
+retired from this superproject now that 7.1 has full feature parity — it still
+exists on GitHub (`beebono/linux-6-16-sprd`) for reference if ever needed.
+
 ## Build
 
 From the repo root, using `aarch64-linux-gnu-` and gcc 13:
 
 ```bash
 # Kernel + DTB
-make -C src/linux-6-16-sprd ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) Image dtbs
+make -C src/linux-7-1-sprd ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) Image dtbs
 
 # initramfs (builds busybox from the submodule, assembles overlay, packs cpio.gz)
 src/initramfs/build-initramfs.sh          # -> build/initramfs/initramfs.cpio.gz
 
 # boot.img
 PYTHONPATH=tools/mkbstub mkbootimg --header_version 4 \
-  --kernel src/linux-6-16-sprd/arch/arm64/boot/Image \
+  --kernel src/linux-7-1-sprd/arch/arm64/boot/Image \
   --ramdisk build/initramfs/initramfs.cpio.gz \
   --cmdline "console=tty0 ignore_loglevel rdinit=/init" \
   -o build/boot/boot_custom.img
 
-# vendor_boot.img (carries the DTB)
+# vendor_boot.img (carries the DTB). The vendor ramdisk is an unused
+# placeholder (the real initramfs ships in boot.img above); pull the
+# existing tiny one out of any prior vendor_boot build rather than
+# constructing one from scratch:
+PYTHONPATH=tools/mkbstub unpack_bootimg \
+  --boot_img build/boot/vendor_boot_custom.img --out /tmp/vb_unpack
 PYTHONPATH=tools/mkbstub mkbootimg --header_version 4 \
   --vendor_boot build/boot/vendor_boot_custom.img \
-  --dtb src/linux-6-16-sprd/arch/arm64/boot/dts/sprd/ums512-1h10.dtb \
-  --vendor_ramdisk <empty-vendor-ramdisk> \
+  --dtb src/linux-7-1-sprd/arch/arm64/boot/dts/sprd/ums512-rg-rotate.dtb \
+  --vendor_ramdisk /tmp/vb_unpack/vendor_ramdisk00 \
   --pagesize 4096 --base 0x0 --kernel_offset 0x8000 \
   --ramdisk_offset 0x5400000 --tags_offset 0x100 --dtb_offset 0x1f00000
 ```

@@ -5,16 +5,16 @@
 #
 # The vendor ramdisk and all header offsets are inherited from an existing
 # vendor_boot image (TEMPLATE_IMG) so the repack is byte-faithful except for the
-# DTB. Defaults target the in-tree ums512-1h10 board.
+# DTB. Defaults target the in-tree ums512-rg-rotate board.
 #
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-KERNEL_DIR="${KERNEL_DIR:-$REPO_ROOT/src/linux-6-16-sprd}"
-DTB="${DTB:-$KERNEL_DIR/arch/arm64/boot/dts/sprd/ums512-1h10.dtb}"
-DTB_SRC_REL="arch/arm64/boot/dts/sprd/ums512-1h10.dtb"
+KERNEL_DIR="${KERNEL_DIR:-$REPO_ROOT/src/linux-7-1-sprd}"
+DTB="${DTB:-$KERNEL_DIR/arch/arm64/boot/dts/sprd/ums512-rg-rotate.dtb}"
+DTB_SRC_REL="arch/arm64/boot/dts/sprd/ums512-rg-rotate.dtb"
 CROSS_COMPILE="${CROSS_COMPILE:-aarch64-linux-gnu-}"
 JOBS="${JOBS:-$(nproc)}"
 

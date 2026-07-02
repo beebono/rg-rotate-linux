@@ -18,10 +18,6 @@
 	path = src/u-boot
 	url = https://github.com/beebono/u-boot-ums512.git
 	branch = main
-[submodule "src/linux-6-16-sprd"]
-	path = src/linux-6-16-sprd
-	url = https://github.com/beebono/linux-6-16-sprd.git
-	branch = ums512
 [submodule "vendor/android-kernel-rp2p"]
 	path = vendor/android-kernel-rp2p
 	url = https://github.com/turtleletortue/android_kernel_retroid_pocket2plus.git
