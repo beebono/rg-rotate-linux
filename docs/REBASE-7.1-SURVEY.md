@@ -286,11 +286,18 @@ Upstream is **not ahead** on the audio wall and in fact TRIMMED the path:
   shutdown backstop). All 12 zones now report calibrated temps (22-58°C
   range) and `cooling_device0-2` register. DT-only change, flashed via
   `vendor_boot_a`.
-  - **Watchdog is a known remaining gap, deferred pending complexity
-    survey.** `CONFIG_SPRD_WATCHDOG=y` is compiled in but there's no DT node,
-    so `/dev/watchdog0` never appears and `hw-watchdog.service` can't feed
-    it. Checked `sprd_wdt.c`: the hardware counter only starts when
-    something opens the device node (`sprd_wdt_start()`, not armed by
-    bootloader/probe), so this is **not** a ticking-timebomb risk — its
-    absence just means no auto-recovery from a kernel hard-hang, not a
-    latent reboot.
+- **Watchdog ported (DONE — confirmed on-device 2026-07-02).** Turned out
+  bigger than the initial survey: `CONFIG_SPRD_WATCHDOG=y` was compiled in
+  but had no DT node (AP `wd0`), AND the sc2730 PMIC watchdog driver
+  (`sc27xx_wdt.c`, `CONFIG_SC27XX_WATCHDOG`) was **missing entirely** from
+  7.1, not just its DT node — easy to miss since `hw-watchdog.service` feeds
+  both `/dev/watchdog0` and `/dev/watchdog1` in one shell command, so a
+  half-port would have silently broken the whole feed script. Ported both:
+  `watchdog@2f0000` (aon bus, offset-addressed) with `timeout-sec = <30>`
+  (bumped from 6.16's 12s for margin), and `sc27xx_wdt.c` + Kconfig/Makefile
+  + `sc2730.dtsi` `watchdog@40`. Checked `sprd_wdt.c` first: the hardware
+  counter only starts when something opens the device node
+  (`sprd_wdt_start()`, not armed by bootloader/probe), so porting this
+  carried no risk of an unfed bootloader-armed timer biting on flash.
+  Confirmed on-device: `hw-watchdog.service` active and feeding both
+  devices, no watchdog/wdt errors in dmesg.
