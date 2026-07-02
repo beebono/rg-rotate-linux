@@ -148,6 +148,12 @@ picocom -b 115200 /dev/ttyACM0
 The kernel gadget enumerates as `0525:a4a7`. If you still see `1782:4d00`, that
 is not the Linux console yet.
 
+If ModemManager runs on your host, it treats the gadget as a candidate modem
+and probes it with AT commands, which land as garbage on the target's login
+shell. Install `tools/spd_dump/40-rgrotate-console-mm-ignore.rules` into
+`/etc/udev/rules.d/` and `udevadm control --reload-rules && udevadm trigger`
+to stop it.
+
 ## Recovery
 
 If the device becomes unreachable, force it off (**Vol-Down + Power**), then hold

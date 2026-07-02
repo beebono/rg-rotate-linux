@@ -1,0 +1,9 @@
+# Stop ModemManager from probing the RG Rotate's USB gadget serial console.
+#
+# The board enumerates as a generic CDC-ACM gadget (0525:a4a7, "Linux-USB
+# Serial Gadget"), which ModemManager treats as a modem candidate and
+# actively probes with AT commands on connect. Those probe bytes land on
+# the target's login shell as garbage input (looks like the boot banner
+# being "typed in"). Numbered below ModemManager's own 77-/80- rules so
+# this ENV assignment wins regardless of /etc vs /usr/lib rule precedence.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0525", ATTRS{idProduct}=="a4a7", ENV{ID_MM_DEVICE_IGNORE}="1"
