@@ -10,7 +10,115 @@ tone** — but the failure is now localized to one interface (read on).
 
 ---
 
-## Current State (2026-06-28, session 5)
+## Current State (2026-07-02, session 7 — AP01_PLY_FIFO ported, wall confirmed VBC-core-wide)
+
+Ported the vendor **AP01_PLY_FIFO** transport into `vbc-v4-dsp.c` (mono-only,
+single DMA channel, matching this board's single speaker): AP-side VBC MMIO
+block (`vbc@33480000`, `sprd,vbc-phy-offset`, `power-domains = <&agdsp>` added
+to the DT `vbc` node), `ap01_reg_update/setup/start/stop()` poke
+`VBC_AP01_FIFO_CTRL`/`VBC_AUD_EN`/`VBC_AUD_CLR`/`VBC_AUD_DMA_EN` directly (no
+DSP IPC in the data path), `sprd_vbc_fe_hw_params/hw_free/trigger` branch on
+`fe_dai->id == VBC_FE_NORMAL_AP01` to point `dma_data` at
+`VBC_AUDPLY_FIFO_WR_0` via a new single DMA line (`agcp_dma 1`, DT name
+`"normal_p"`) instead of MCDT. `pm_runtime` (autosuspend, mirrors
+`sprd-mcdt.c`) added to the `vbc` device to keep the AP registers clocked
+during a stream. Kernel + DTB build clean; DAI lands at `pcmC0D3p`.
+
+**Result: AP-side register interface is proven correct on silicon, but this
+transport is a dead end too — same wall as MCDT, now proven VBC-core-wide.**
+Live `devmemn` peeks mid-stream (safe, repeatedly confirmed even across two
+unrelated panics this session — see below) show every register landing
+exactly as intended: `AUD_EN=0x100` (FIFO0 enabled), `AUD_DMA_EN=0x1`
+(DMA-DA0 enabled), `AUDPLY_FIFO_CTRL` watermark=80 and format=`VBC_DAT_L16`
+all correct. Despite this, `pcmtone` free-runs **worse and more erratically**
+than the MCDT path — 72x free-run one run, 349x the next (MCDT was a
+comparatively stable ~43x) — meaning there is **no real hardware backpressure
+at all** on this path, just whatever speed the write ioctl completes at.
+
+**This is a genuinely useful negative result**, not just another dead end:
+since AP01_PLY_FIFO bypasses MCDT and DSP pacing *entirely* (the AP writes
+straight into VBC's own hardware FIFO; VBC's own watermark/DMA-request logic
+is supposed to pace it, no AGDSP firmware in the data path) and it *still*
+free-runs, this rules out any MCDT-specific or DSP-pacing-specific theory.
+The wall is **VBC's own internal audio core clock/pipeline** — whatever
+actually consumes *any* FIFO (MCDT or AP01) and forwards samples into the
+mixer/output is never being enabled/clocked, independent of which FIFO feeds
+it. Two concrete next leads this points at:
+1. Vendor's `VBC_MUX_AP01_DSP_PLY` kcontrol (`dsp_vbc_mux_ap01_dsp_set`, a DSP
+   IPC command that routes AP01's FIFO into the internal mixer) was never
+   ported — plausibly the missing enable, even though it's a DSP-IPC call
+   (the DSP would just be configuring the routing, not touching sample data).
+2. A VBC core clock (`audcp-vbc-eb`/`audcp-vbc-24m-eb` or similar) gated until
+   DSP firmware's own scene management enables it — meaning no AP-side or
+   register-only path can ever work without at least one DSP command
+   establishing routing first, even if DSP never touches the actual samples.
+
+**`clk_summary` hazard — RESOLVED (2026-07-02, session 8).** The panics were
+never audio-related. Two stacked bugs, both fixed and verified on HW (idle +
+mid-stream reads now clean):
+1. The 7.1 tree gained a *working* PMU genpd (`&pmu`), so the `mm` domain
+   powers off at late-init and `gpu_top` whenever panfrost idles — but the
+   ums512 clock controllers *inside* those domains (`gpu_clk` @0x60100000,
+   `mm_gate` @0x62200000, `mm_clk` @0x62100000) had no `power-domains` and
+   `ums512_clk_probe` never enabled runtime PM, so the clk core's guards
+   (`clk_pm_runtime_get_all()` before the summary walk, the rpm check in
+   `clk_core_is_enabled()`) were inert and the walk read powered-off register
+   files → SError. Fix: mirror `ums9230_clk_probe` (`pm_runtime_set_active` +
+   `devm_pm_runtime_enable`) and add the `power-domains` to all three nodes.
+   On 6.16 there was no PMU genpd (domains never powered off) — that's why
+   `clk_summary` was safe before the migration.
+2. `mm_clk` (0x62100000, the MM CKG block) additionally needs `MM_CKG_EB`
+   (mm_gate bit 7) — proven by live poke: with the MM domain forced on,
+   0x62200000 reads fine but 0x62100000 still bus-faults until that gate is
+   set. U-Boot leaves it on, `clk_disable_unused` (~9.7s) turned it off, so
+   every later walk died in `sprd_gate_is_enabled` on the `mipi_csi*` gates
+   registered in that block. Fix: `clocks = <&ext_26m>, <&mm_gate
+   CLK_MM_CKG_EB>` / `clock-names = "ext-26m", "enable"` on the `mm_clk` node
+   (the sprd clk common probe consumes an optional "enable" clock; ums9230's
+   mm_clk has the identical wiring).
+Side effect (accepted, matches ums9230 behavior): prepared clocks hold their
+provider runtime-active, so `gpu_top` (panfrost keeps clocks prepared) and MM
+(the always-held "enable" clock) are now pinned on — idle-power cost, can be
+revisited. Useful new datum from the first safe mid-stream read:
+`audcp-vbc-eb` is hardware-enabled with zero kernel enable count — the AGDSP
+firmware enables the VBC core clock itself during a stream, so a *gated* VBC
+core clock is less likely to be the audio wall than the un-ported
+`VBC_MUX_AP01_DSP_PLY` routing command.
+
+## Prior State (2026-07-02, session 6, post 6.16→7.1 migration)
+
+Migrated to the `linux-7-1-sprd` tree. Re-confirmed the wall is unchanged: same
+~43x free-run, same amplitude-independent hiss. One new result this session:
+
+**Hypothesis #1 (PMIC-side AUDIF receiver not enabled) is now RULED OUT.** The
+note below that "the sc2730 PMIC audio codec is NOT [in regmap-debugfs]" was
+wrong — `/sys/kernel/debug/regmap/spi0.0/registers` exposes the *entire* sc2730
+PMIC regmap (the SPI/ADI bus regmap covers the whole `0x0000-0xffff` PMIC space,
+audio block included; it's just filed under the generic SPI device name, not a
+component name). Reading it live mid-stream (background `pcmtone` + `grep` the
+registers file over serial) shows every register mainline's `sc2730.c` /
+`ums9230-digital.c` sets **is landing correctly on silicon**: `AUD_TOPA_CLK_EN`,
+`DAC_EN_L/R`, `CLK_DAC`, `DACL`/`DACR` DAPM widgets, `AUDIF`/`AUDIF_6M5`/`AUD_SCLK`
+clocks, and the `AUD_DAC_CTL` sample-rate field are all correctly programmed
+during a stream. Cross-checked against the vendor 5.4 `aud_topa_rf.h` /
+`sprd-codec.c` — the only vendor register mainline doesn't touch at all is
+`ANA_ET2`'s `RG_AUD_ET_EN` (envelope-tracking/charge-pump trim; vendor comment
+itself says `/* yintang: for temp test */`, not part of the data path).
+
+**Conclusion: the AP-visible/PMIC register surface is exhausted and clean.** The
+remaining gap is DSP-firmware-side — the AGDSP firmware isn't pacing playback at
+48 kHz (same free-run symptom since session 2), so whatever the AP side sends to
+AUDIF's transmit path (if anything, given the DSP never even reaches real-time)
+can't matter. Next recommended step: the loopback sanity test (open hypothesis
+#4 below) to isolate "hardware transport still broken" vs "DSP never sends real
+samples" without needing to reverse-engineer the DSP firmware.
+
+Also this session: the 7.1 migration itself introduced a transient blocker
+(`ums512.dtsi`'s `agdsp` node had the wrong `compatible` string, `sprd,ums512-agdsp`
+vs. the driver's `sprd,ums9230-agdsp`, causing audcp-boot/mcdt/dma/digital-codec
+to all defer-timeout) — fixed, unrelated to the audio wall itself.
+
+## Prior State (2026-06-28, session 5)
 
 The break has been narrowed from "somewhere in a long DSP/codec chain" down to a
 **single interface: `aud_top` digital codec → AUDIF → sc2730 analog DAC.**
