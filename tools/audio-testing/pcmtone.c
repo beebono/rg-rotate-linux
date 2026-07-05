@@ -37,13 +37,16 @@ static struct snd_interval *pival(struct snd_pcm_hw_params *p, int n) {
 }
 
 int main(int argc, char **argv) {
-	/* args: freq amplitude period_frames seconds  (period must be x160) */
+	/* args: freq amplitude period_frames seconds [device] [channels]
+	 * (period must be x160) */
 	int freq   = argc > 1 ? atoi(argv[1]) : 220;
 	int amp    = argc > 2 ? atoi(argv[2]) : 6500;
 	int period = argc > 3 ? atoi(argv[3]) : 1280;   /* 160*8 -> 5120 bytes */
 	int secs   = argc > 4 ? atoi(argv[4]) : 1;
+	const char *dev = argc > 5 ? argv[5] : "/dev/snd/pcmC0D0p";
+	int chans  = argc > 6 ? atoi(argv[6]) : 2;
 
-	int fd = open("/dev/snd/pcmC0D0p", O_RDWR);
+	int fd = open(dev, O_RDWR);
 	if (fd < 0) { perror("open"); return 1; }
 
 	struct snd_pcm_hw_params p;
@@ -61,7 +64,7 @@ int main(int argc, char **argv) {
 	memset(pmask(&p, SNDRV_PCM_HW_PARAM_SUBFORMAT)->bits+1, 0, sizeof(struct snd_mask)-4);
 
 	int nper = 8;
-	ival_set(pival(&p, SNDRV_PCM_HW_PARAM_CHANNELS), 2);
+	ival_set(pival(&p, SNDRV_PCM_HW_PARAM_CHANNELS), chans);
 	ival_set(pival(&p, SNDRV_PCM_HW_PARAM_RATE), 48000);
 	ival_set(pival(&p, SNDRV_PCM_HW_PARAM_PERIOD_SIZE), period);
 	ival_set(pival(&p, SNDRV_PCM_HW_PARAM_PERIODS), nper);
@@ -128,14 +131,15 @@ int main(int argc, char **argv) {
 	 * the stream stays RUNNING the whole time (stop_threshold=LONG_MAX) so
 	 * MCDT/DAPM state can be sampled from another shell while this runs. */
 	int frames = period;
-	int16_t *buf = malloc(frames * 2 * sizeof(int16_t));
+	int16_t *buf = malloc(frames * chans * sizeof(int16_t));
 	time_t end = time(NULL) + secs;
 	long w = 0;
 	while (time(NULL) < end) {
 		for (int i = 0; i < frames; i++) {
 			double t = (double)(w*frames + i) / 48000.0;
 			int16_t s = (int16_t)((double)amp * sin(2*M_PI*freq*t));
-			buf[i*2] = s; buf[i*2+1] = s;
+			for (int c = 0; c < chans; c++)
+				buf[i*chans + c] = s;
 		}
 		struct snd_xferi xfer = { .buf = buf, .frames = frames, .result = 0 };
 		if (ioctl(fd, SNDRV_PCM_IOCTL_WRITEI_FRAMES, &xfer)) {

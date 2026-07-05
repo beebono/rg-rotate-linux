@@ -5,8 +5,7 @@ Mainline Linux on the Anbernic RG Rotate handheld. Board: `ums512_1h10`
 
 **Mainline 7.1 boots a Debian 12 rootfs on eMMC with a working USB serial
 console and a live panel.** For the current per-subsystem status and bring-up
-detail, see **[DEVICE-BRINGUP.md](DEVICE-BRINGUP.md)** and
-**[docs/REBASE-7.1-SURVEY.md](docs/REBASE-7.1-SURVEY.md)**.
+detail, see **[DEVICE-BRINGUP.md](DEVICE-BRINGUP.md)**.
 
 ## Clone
 
@@ -23,7 +22,7 @@ git submodule update --init --recursive
 
 | Path | What |
 |------|------|
-| `src/linux-7-1-sprd/` | Linux 7.1 SPRD-flavored kernel fork (branch `rg-rotate`, off Otto Pflüger's codeberg `ums9230-mainline` line) — **boots the device**, default target for the recipes below. Board is `ums512-rg-rotate` (see [docs/REBASE-7.1-SURVEY.md](docs/REBASE-7.1-SURVEY.md)) |
+| `src/linux-7-1-sprd/` | Linux 7.1 SPRD-flavored kernel fork (branch `rg-rotate`, off Otto Pflüger's codeberg `ums9230-mainline` line) — **boots the device**, default target for the recipes below. Board is `ums512-rg-rotate`. |
 | `src/u-boot/` | Vendor U-Boot BSP fork (`ums512_1h10` board target) — teaching it to light the panel and hand off via `extlinux`; the canonical U-Boot tree (see [docs/BOOT-CHAIN.md](docs/BOOT-CHAIN.md)) |
 | `src/busybox/` | busybox source for the initramfs |
 | `src/initramfs/` | initramfs overlay + reproducible build script (see [src/initramfs/README.md](src/initramfs/README.md)) |
@@ -166,7 +165,4 @@ rule at `tools/spd_dump/90-spd-dump.rules` allows `spd_dump` access without
 
 - **[DEVICE-BRINGUP.md](DEVICE-BRINGUP.md)** — status, bring-up checklist, per-subsystem notes
 - [docs/DISPLAY-BRINGUP.md](docs/DISPLAY-BRINGUP.md) — DRM/DSI panel recipe and live-debug detail
-- [docs/BOOT-CHAIN.md](docs/BOOT-CHAIN.md) — secure-boot bypass, vendor U-Boot extlinux porting, partition map
-- [docs/WHAT-HAS-BEEN-TRIED.md](docs/WHAT-HAS-BEEN-TRIED.md) / [docs/WHAT-HAS-BEEN-TRIED-USB.md](docs/WHAT-HAS-BEEN-TRIED-USB.md) — full chronology and dead ends
-- [docs/DISPLAY-KNOWN-GOOD-DSI-STATE.md](docs/DISPLAY-KNOWN-GOOD-DSI-STATE.md) — captured known-good DSI register fingerprint
 - [docs/POWER-BRINGUP-NOTES.md](docs/POWER-BRINGUP-NOTES.md) — PMIC / fuel gauge / charger notes

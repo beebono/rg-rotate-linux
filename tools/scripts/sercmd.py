@@ -9,10 +9,12 @@ ANSI = re.compile(rb"\x1b\[[0-9;?]*[a-zA-Z]")
 def clean(b):
     return ANSI.sub(b"", b).replace(b"\r", b"").decode(errors="replace")
 
-def run(ser, cmd, timeout=30):
+def run(ser, cmd, timeout=99999):
     ser.reset_input_buffer()
     ser.write(cmd.encode() + b"\n")
     ser.flush()
+    if cmd.rstrip().endswith("&"):
+        return ""
     buf = b""
     deadline = time.time() + timeout
     while time.time() < deadline:
