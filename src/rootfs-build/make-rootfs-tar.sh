@@ -13,9 +13,23 @@ SUITE="${SUITE:-bookworm}"
 ARCH="${ARCH:-arm64}"
 MIRROR="${MIRROR:-http://deb.debian.org/debian}"
 OUT="${OUT:-debian-${SUITE}-${ARCH}.tar}"
-# Keep this minimal; per-device config (console, watchdog, fstab, USB role) is
-# layered in by make-image.sh, not baked into the base tar.
-PACKAGES="${PACKAGES:-systemd-sysv,udev,ifupdown,iproute2,isc-dhcp-client,nano,less,ca-certificates,openssh-server}"
+# Per-device config (console, watchdog, fstab, USB role) is layered in by
+# make-image.sh, not baked into the base tar. This set covers a working CLI
+# board: base system + networking, an audio stack for the DAC/DSP bring-up work,
+# Python, and the usual hardware-poking/debug amenities.
+PACKAGES="${PACKAGES:-\
+systemd-sysv,udev,dbus,\
+ifupdown,iproute2,iputils-ping,isc-dhcp-client,\
+wpasupplicant,openssh-server,ca-certificates,\
+nano,less,vim-tiny,file,tmux,htop,\
+python3,python3-pip,\
+alsa-utils,alsa-tools,libasound2,\
+usbutils,i2c-tools,pciutils,\
+device-tree-compiler,kmod,\
+gpiod,evtest,\
+strace,gdb,xxd,\
+curl,wget,rsync,ethtool,\
+bash-completion}"
 
 command -v mmdebstrap >/dev/null || {
   echo "ERROR: mmdebstrap not found. Install it: sudo apt install mmdebstrap" >&2

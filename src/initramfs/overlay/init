@@ -43,13 +43,21 @@ echo "UMS512 initramfs init reached" > /dev/kmsg 2>/dev/null
 
 # Force USB peripheral role so the kernel musb establishes a session and the
 # g_serial gadget enumerates (no extcon/typec on this board, dr_mode=otg).
+# This triggers phy_power_on (un-isolate) -> set_mode(DEVICE) -> musb_start.
 for r in /sys/class/usb_role/*/role; do
 	[ -e "$r" ] || continue
 	echo device > "$r" 2>/dev/null
 done
 
-# Try to pivot into the real Debian rootfs on eMMC userdata (mmcblk3p74).
+# Try to pivot into the real Debian rootfs. Honor a root= on the kernel cmdline
+# (the microSD extlinux image passes root=/dev/mmcblk0p2); default to the eMMC
+# userdata partition (mmcblk3p74) when none is given, preserving the eMMC flow.
 ROOTDEV=/dev/mmcblk3p74
+for arg in $(cat /proc/cmdline 2>/dev/null); do
+	case "$arg" in
+		root=*) ROOTDEV="${arg#root=}" ;;
+	esac
+done
 NEWROOT=/newroot
 mkdir -p "$NEWROOT"
 for i in 1 2 3 4 5 6 7 8 9 10; do
@@ -71,11 +79,18 @@ done
 
 if [ "$mounted" = 1 ] && [ -x "$NEWROOT/lib/systemd/systemd" ]; then
 	capture_pstore "$NEWROOT/var/log/pstore-early"
-	echo "initramfs: switching root to $ROOTDEV" > /dev/kmsg 2>/dev/null
-	# Stop the initramfs watchdog petters; they would otherwise survive
-	# switch_root (reparented to the new init), busy-spin, and hold the
-	# watchdog devices away from the rootfs watchdog service.
+
+	# Stop the initramfs watchdog petters before pivoting. They MUST NOT
+	# survive switch_root: switch_root wipes the old initramfs (including
+	# /bin/busybox and /bin/sleep), so a surviving petter's `sleep 1` exec
+	# fails and it spin-floods the console with "sleep: not found" while
+	# pegging a CPU. The rootfs hw-watchdog.service takes over feeding; if
+	# systemd stalls the hardware watchdog reboots after 60s (nowayout) --
+	# an acceptable, observable failure (the panel freezes on the stalling
+	# unit first, and debug-flush.service syncs the journal every 10s).
 	[ -n "$WD_PETTERS" ] && kill $WD_PETTERS 2>/dev/null
+
+	echo "initramfs: switching root to $ROOTDEV" > /dev/kmsg 2>/dev/null
 	mount --move /dev "$NEWROOT/dev" 2>/dev/null
 	mount --move /proc "$NEWROOT/proc" 2>/dev/null
 	mount --move /sys "$NEWROOT/sys" 2>/dev/null
@@ -104,16 +119,18 @@ print_diag() {
 	echo
 }
 
-# Reprint the diagnostics on a loop, reopening the gadget each pass, so a host
-# that attaches at any time catches a fresh banner within a few seconds. We do
-# NOT spawn an interactive shell here: the gadget enumerates before the host
-# opens the port, so a one-shot print is emitted into the void and a blocking
-# `sh -i` then sits forever -- which is why earlier attempts looked dead.
+# Interactive recovery shell on the gadget serial. On a working-USB path this
+# lets us poke the hardware live (devmem, mount -t debugfs, cat regmap, etc.).
+# We RESPAWN it: the gadget can enumerate before the host
+# opens the port, and on disconnect `sh -i` gets EOF and exits -- the loop then
+# starts a fresh one so a host attaching at any time gets a usable prompt. setsid
+# -c gives the shell a controlling tty so job control / line editing work.
 (
 	while [ ! -e /dev/ttyGS0 ]; do sleep 1; done
 	while : ; do
 		print_diag > /dev/ttyGS0 2>&1
-		sleep 3
+		setsid -c /bin/sh -i <>/dev/ttyGS0 >&0 2>&1
+		sleep 1
 	done
 ) &
 while : ; do sleep 5; done

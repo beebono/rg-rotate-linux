@@ -22,10 +22,15 @@ tar -C "$S" --numeric-owner -xf "$TAR"
 
 # --- console: autologin root on the USB gadget serial ---
 mkdir -p "$S/etc/systemd/system/serial-getty@ttyGS0.service.d"
+# --autologin root + a SINGLE fixed baud, no --keep-baud / no baud list: on a
+# CDC-ACM gadget --keep-baud made agetty adopt the host's line-coding and a comma
+# baud list put it in baud-cycling + parity-detect mode, which garbled ttyGS0
+# input (stuck echo char / reprinted banner fragments). Dropped the -o issue
+# string too (redundant under autologin).
 cat > "$S/etc/systemd/system/serial-getty@ttyGS0.service.d/override.conf" <<'EOF'
 [Service]
 ExecStart=
-ExecStart=-/sbin/agetty -o '-p -- \\u' --keep-baud --autologin root 115200 %I $TERM
+ExecStart=-/sbin/agetty --autologin root --noclear --noissue 115200 %I $TERM
 EOF
 mkdir -p "$S/etc/systemd/system/getty.target.wants"
 ln -sf /lib/systemd/system/serial-getty@.service \
@@ -72,6 +77,7 @@ Before=sysinit.target shutdown.target
 Conflicts=shutdown.target
 [Service]
 Type=simple
+ExecStartPre=/bin/sh -c 'test -c /dev/watchdog0 && test -c /dev/watchdog1'
 ExecStart=/bin/sh -c 'exec 8>/dev/watchdog0 9>/dev/watchdog1; while :; do printf x >&8; printf x >&9; sleep 2; done'
 Restart=always
 RestartSec=1
