@@ -1,10 +1,6 @@
 [submodule "tools/pac-extractor"]
 	path = tools/pac-extractor
 	url = https://github.com/bismoy-bot/PAC-Extractor.git
-[submodule "vendor/android-kernel-ums512"]
-	path = vendor/android-kernel-ums512
-	url = https://github.com/Veynamer/android_kernel_unisoc_ums512.git
-	branch = Dev-infinix-x6816d
 [submodule "src/busybox"]
 	path = src/busybox
 	url = https://github.com/mirror/busybox.git
