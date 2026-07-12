@@ -9,7 +9,7 @@ recipes and repo layout see the [README](README.md).
 console AND a live panel.**
 
 - Kernel `7.1.0-sprd-ums512+` boots from `boot_a`; the busybox initramfs `/init`
-  `switch_root`s into Debian 12 (bookworm) on `mmcblk3p74`.
+  `switch_root`s into Debian 13 (trixie) on `mmcblk3p74`.
 - Interactive autologin root shell over USB-C at host `/dev/ttyACM0` (CDC-ACM
   gadget), no UART hardware required.
 - eMMC enumerates; both watchdogs are fed by `hw-watchdog.service`; backlight

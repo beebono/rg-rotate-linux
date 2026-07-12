@@ -5,7 +5,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-TAR=$(readlink -f debian-bookworm-arm64.tar)
+TAR=$(readlink -f debian-trixie-arm64.tar)
 IMG=$(readlink -f debian-userdata.img)
 IMG_MB=${IMG_MB:-4096}
 ROOT_PART=/dev/mmcblk3p74

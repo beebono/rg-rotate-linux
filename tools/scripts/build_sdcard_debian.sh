@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Build a complete micro-SD Debian (bookworm, arm64) image for RG Rotate that
+# Build a complete micro-SD Debian (trixie, arm64) image for RG Rotate that
 # our vendor U-Boot boots via extlinux.
 #
 # Boot path (see board/spreadtrum/ums512_1h10/extlinux_diag.c): the microSD is
@@ -40,7 +40,7 @@ OUT_IMG="${1:-$SCRIPT_DIR/rg-rotate-sdcard.img}"
 
 KERNEL_IMG="${KERNEL_IMG:-$REPO_ROOT/src/linux-7-1-sprd/arch/arm64/boot/Image}"
 DTB_IMG="${DTB_IMG:-$REPO_ROOT/src/linux-7-1-sprd/arch/arm64/boot/dts/sprd/ums512-rg-rotate.dtb}"
-ROOTFS_TAR="${ROOTFS_TAR:-$REPO_ROOT/src/rootfs-build/debian-bookworm-arm64.tar}"
+ROOTFS_TAR="${ROOTFS_TAR:-$REPO_ROOT/src/rootfs-build/debian-trixie-arm64.tar}"
 INITRD_IMG="${INITRD_IMG:-$REPO_ROOT/build/initramfs/initramfs.cpio.gz}"
 AUDIO_DIR="${AUDIO_DIR:-$REPO_ROOT/tools/audio-testing}"
 # AGDSP firmware. The built-in sprd-audcp-boot driver request_firmware()s this
@@ -53,12 +53,14 @@ BOOT_MB="${BOOT_MB:-128}"
 ROOTFS_MB="${ROOTFS_MB:-3072}"
 ROOT_PART="/dev/mmcblk0p2"
 # The initramfs init parses root= off this cmdline and switch_root's into it.
-# rgdebug: initramfs keeps the watchdog petters alive across switch_root (so a
-# >60s systemd stall doesn't trip the nowayout/60s watchdog reboot) and dumps
-# the previous boot's journal to ttyGS0. systemd.log_level=debug + kmsg target
-# make the stalling unit visible. Drop the `rgdebug systemd.log_*` tokens for a
-# production image.
-CMDLINE="${CMDLINE:-console=tty0 ignore_loglevel initrd=/init root=$ROOT_PART rw rgdebug}"
+CMDLINE="${CMDLINE:-console=tty0 ignore_loglevel initrd=/init root=$ROOT_PART rw}"
+
+# Optional WiFi auto-connect profile baked into NetworkManager. Set WIFI_SSID
+# (and WIFI_PSK for WPA-PSK networks; leave PSK empty for an open network) to
+# have the board associate + DHCP on boot with no console interaction. Unset =>
+# no profile written; use nmtui/nmcli on-device instead.
+WIFI_SSID="${WIFI_SSID:-}"
+WIFI_PSK="${WIFI_PSK:-}"
 
 DTB_NAME="$(basename "$DTB_IMG")"
 
@@ -115,6 +117,7 @@ STAGE="$tmpdir/staging"
 mkdir -p "$STAGE"
 
 export ROOTFS_TAR ROOTFS_IMG STAGE ROOTFS_MB ROOT_PART AUDIO_DIR FW_DIR
+export WIFI_SSID WIFI_PSK
 
 fakeroot -- bash -e <<'FAKE'
 S="$STAGE"
@@ -175,6 +178,35 @@ ln -sf /etc/systemd/system/usb-device-role.service \
 # --- don't block boot on the network ---
 ln -sf /dev/null "$S/etc/systemd/system/systemd-networkd-wait-online.service"
 
+# --- NetworkManager: enable the service + (optionally) bake a WiFi auto-connect
+#     profile. mmdebstrap's minbase variant doesn't run maintainer postinsts, so
+#     enable the unit explicitly rather than relying on the systemd preset. ---
+if [ -e "$S/lib/systemd/system/NetworkManager.service" ]; then
+  mkdir -p "$S/etc/systemd/system/multi-user.target.wants"
+  ln -sf /lib/systemd/system/NetworkManager.service \
+    "$S/etc/systemd/system/multi-user.target.wants/NetworkManager.service"
+
+  if [ -n "$WIFI_SSID" ]; then
+    NMDIR="$S/etc/NetworkManager/system-connections"
+    mkdir -p "$NMDIR"
+    UUID="$(cat /proc/sys/kernel/random/uuid)"
+    PROFILE="$NMDIR/${WIFI_SSID}.nmconnection"
+    {
+      printf '[connection]\nid=%s\nuuid=%s\ntype=wifi\nautoconnect=true\n\n' \
+        "$WIFI_SSID" "$UUID"
+      printf '[wifi]\nmode=infrastructure\nssid=%s\n\n' "$WIFI_SSID"
+      if [ -n "$WIFI_PSK" ]; then
+        printf '[wifi-security]\nkey-mgmt=wpa-psk\npsk=%s\n\n' "$WIFI_PSK"
+      fi
+      printf '[ipv4]\nmethod=auto\n\n[ipv6]\nmethod=auto\n'
+    } > "$PROFILE"
+    # NM refuses to load keyfiles that aren't root-owned 0600 (fakeroot records
+    # this and mke2fs -d bakes it into the image).
+    chmod 600 "$PROFILE"
+    echo "==> baked WiFi profile for SSID '$WIFI_SSID'" >&2
+  fi
+fi
+
 # --- watchdog handoff: feed AP wd0 + sc2730 wd1. The initramfs petters are
 #     killed right before switch_root, so this service must take over early. ---
 cat > "$S/etc/systemd/system/hw-watchdog.service" <<'EOF'
@@ -194,30 +226,6 @@ WantedBy=sysinit.target
 EOF
 ln -sf /etc/systemd/system/hw-watchdog.service \
   "$S/etc/systemd/system/sysinit.target.wants/hw-watchdog.service"
-
-# --- rgdebug: persistent journal + periodic disk sync. journald keeps the
-#     failing boot's log on /var/log/journal, and the 10s sync loop means the
-#     board can be power-cut and the SD pulled at ANY point (before or after
-#     autologin) with the journal intact. Gated on the `rgdebug` cmdline token
-#     via ConditionKernelCommandLine, and started early (sysinit.target,
-#     DefaultDependencies=no) so it also covers a stall before multi-user. ---
-mkdir -p "$S/var/log/journal"
-cat > "$S/etc/systemd/system/debug-flush.service" <<'EOF'
-[Unit]
-Description=rgdebug: periodic journal flush + disk sync for safe SD pull
-DefaultDependencies=no
-After=systemd-journald.service
-ConditionKernelCommandLine=rgdebug
-[Service]
-Type=simple
-ExecStart=/bin/sh -c 'while :; do journalctl --flush 2>/dev/null; sync; sleep 10; done'
-Restart=always
-RestartSec=2
-[Install]
-WantedBy=sysinit.target
-EOF
-ln -sf /etc/systemd/system/debug-flush.service \
-  "$S/etc/systemd/system/sysinit.target.wants/debug-flush.service"
 
 # --- bake the audio-testing kit into /root so findings can be exercised
 #     on-device. The arm64 tone/mixer/i2c helpers go on PATH. ---

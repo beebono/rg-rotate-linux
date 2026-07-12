@@ -1,6 +1,6 @@
 # RG Rotate Debian rootfs
 
-Builds the on-eMMC Debian 12 (bookworm) arm64 rootfs that the initramfs
+Builds the on-eMMC Debian 13 (trixie) arm64 rootfs that the initramfs
 `switch_root`s into on `mmcblk3p74`.
 
 This directory holds **only authored scripts**; the base tarball and the ext4
@@ -10,7 +10,7 @@ image are large generated artifacts and are gitignored.
 
 ```bash
 # 1. base rootfs tarball (unprivileged, via mmdebstrap)
-./make-rootfs-tar.sh          # -> debian-bookworm-arm64.tar
+./make-rootfs-tar.sh          # -> debian-trixie-arm64.tar
 
 # 2. configured ext4 userdata image (fakeroot; preserves ownership/setuid)
 ./make-image.sh               # -> debian-userdata.img  (4 GiB, flash to mmcblk3p74)
@@ -25,7 +25,7 @@ peripheral-role unit, and the `hw-watchdog` service (feeds AP `wd0` + sc2730
 
 | File | ~Size | What |
 |------|-------|------|
-| `debian-bookworm-arm64.tar` | 305M | mmdebstrap base (step 1 output / step 2 input) |
+| `debian-trixie-arm64.tar` | 305M | mmdebstrap base (step 1 output / step 2 input) |
 | `debian-userdata.img` | 4G | final ext4 image flashed to the rootfs partition |
 | `debian-userdata.img.tar` | 305M | tarred image for transfer |
 
