@@ -5,7 +5,7 @@ recipes and repo layout see the [README](README.md).
 
 ## Status
 
-**Mainline 7.1 boots a Debian 12 rootfs on eMMC with a working USB serial
+**Mainline 7.1 boots a Debian 13 rootfs on eMMC with a working USB serial
 console AND a live panel.**
 
 - Kernel `7.1.0-sprd-ums512+` boots from `boot_a`; the busybox initramfs `/init`
