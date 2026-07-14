@@ -5,17 +5,20 @@ recipes and repo layout see the [README](README.md).
 
 ## Status
 
-**Mainline 7.1 boots a Debian 13 rootfs on eMMC with a working USB serial
-console AND a live panel.**
+**Mainline 7.1 boots a Debian 13 rootfs with a working USB serial console AND
+a live panel.**
 
-- Kernel `7.1.0-sprd-ums512+` boots from `boot_a`; the busybox initramfs `/init`
-  `switch_root`s into Debian 13 (trixie) on `mmcblk3p74`.
+- Current dev iteration boots from **microSD** via U-Boot's extlinux scan
+  (`mmc 1:1`, ahead of the eMMC slots) — see the README's "Clone"/build
+  section for the `build_sdcard_debian.sh` flow. The busybox initramfs
+  `/init` `switch_root`s into Debian 13 (trixie) on `/dev/mmcblk0p2`.
+- eMMC (`boot_a` + `mmcblk3p74` userdata) remains the on-device/"installed"
+  flow and recovery fallback — kernel `7.1.0-sprd-ums512+` boots from
+  `boot_a` there, same `switch_root` flow onto Debian.
 - Interactive autologin root shell over USB-C at host `/dev/ttyACM0` (CDC-ACM
   gadget), no UART hardware required.
 - eMMC enumerates; both watchdogs are fed by `hw-watchdog.service`; backlight
   stays on through boot.
-- **The panel displays.** As of build #76 (2026-06-26) the device shows fbcon on
-  the 720x720 panel and boots through to a Debian login prompt on-screen.
 
 Current stage: userland hardware bring-up. The live serial console, on-disk
 Debian, and on-screen console are the primary workflow.
@@ -54,6 +57,12 @@ Debian, and on-screen console are the primary workflow.
 ## Polish-level targets
 - [ ] PM / Suspend-Resume — Currently doesn't complete due to charger driver returning -19 and Wifi/SDIO power_notify bool not being set (prevents wifi powersave).
 - [ ] CPU governor / perf profile for gaming — schedutil is live (see cpufreq above) but untuned for emulator workloads; a switchable "performance"-leaning profile (or per-app governor hints) could cut frame-time jitter at the cost of battery, worth exposing as an easy toggle rather than a fixed default.
+
+## U-Boot 2nd-pass targets
+- [ ] Extlinux From eMMC — **eMMC detected, unable to read fat32/ext4** Only affects the extlinux path, vendor cboot/Android bootimg wrapping the debian rootfs *DOES* boot from eMMC as expected. Need to compare the two to see why.
+- [ ] Actual Panel/Bootlogo — **Backlight works, panel needs more.** Scaffolding is in place for the LCD panel to try and scanout during boot, but has yet to show anything. Possibly consider passing framebuffer to Linux as well?
+
+## "If there's nothing else to do" target
 - [ ] DDR devfreq — memory clock is presumably pinned at its boot frequency rather than scaling with load; the one confirmed gap outside PM. Needs scoping (does ums512 have a DDR devfreq/DFS driver upstream or in the vendor tree) and then power/perf tuning for sustained gaming loads vs idle.
 
 Cross-reference `device/stock/dtb_stock.dts` whenever a node, supply, syscon, or
