@@ -1,5 +1,12 @@
 # USB gadget console — cold (power-button) boot enumeration — Status and History
 
+> **Superseded (2026-07-13):** USB is now full automatic dual-role OTG driven by
+> the PMIC Type-C port manager (`sc27xx_pd`) — see
+> [USB-OTG-HOST-CLEANUP.md](USB-OTG-HOST-CLEANUP.md). The gadget console
+> enumerates via CC role detection (plug to host → device role), and the
+> userspace forced-`device` oneshots discussed below have been removed. This
+> document is retained as the history of the earlier cold-boot `-71` deep-dive.
+
 ## TL;DR
 
 The CDC-ACM gadget console (`0525:a4a7`, host `/dev/ttyACM0`) enumerates cleanly

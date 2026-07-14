@@ -41,13 +41,10 @@ done
 
 echo "UMS512 initramfs init reached" > /dev/kmsg 2>/dev/null
 
-# Force USB peripheral role so the kernel musb establishes a session and the
-# g_serial gadget enumerates (no extcon/typec on this board, dr_mode=otg).
-# This triggers phy_power_on (un-isolate) -> set_mode(DEVICE) -> musb_start.
-for r in /sys/class/usb_role/*/role; do
-	[ -e "$r" ] || continue
-	echo device > "$r" 2>/dev/null
-done
+# USB role is now selected automatically by the PMIC Type-C port manager
+# (sc27xx_pd) from CC detection: plugging into a host selects device (the
+# g_serial gadget console enumerates), plugging in a device selects host.
+# No manual role forcing -- it would fight the TCPM.
 
 # Try to pivot into the real Debian rootfs. Honor a root= on the kernel cmdline
 # (the microSD extlinux image passes root=/dev/mmcblk0p2); default to the eMMC

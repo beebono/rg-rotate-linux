@@ -46,21 +46,9 @@ printf '127.0.0.1\tlocalhost rgrotate\n' > "$S/etc/hosts"
 # --- passwordless root (dev board); autologin handles the console anyway ---
 sed -i 's#^root:[^:]*:#root::#' "$S/etc/shadow"
 
-# --- USB peripheral role at boot ---
-cat > "$S/etc/systemd/system/usb-device-role.service" <<'EOF'
-[Unit]
-Description=Force USB peripheral role for gadget console
-DefaultDependencies=no
-Before=sysinit.target
-[Service]
-Type=oneshot
-ExecStart=/bin/sh -c 'for r in /sys/class/usb_role/*/role; do echo device > "$r" 2>/dev/null; done'
-[Install]
-WantedBy=sysinit.target
-EOF
-mkdir -p "$S/etc/systemd/system/sysinit.target.wants"
-ln -sf /etc/systemd/system/usb-device-role.service \
-  "$S/etc/systemd/system/sysinit.target.wants/usb-device-role.service"
+# --- USB role is selected automatically by the Type-C port manager
+# (sc27xx_pd) from CC detection; no forced-peripheral service, which would
+# fight the TCPM and break host mode. ---
 
 # --- don't block boot on network ---
 ln -sf /dev/null "$S/etc/systemd/system/systemd-networkd-wait-online.service"
