@@ -37,7 +37,7 @@ python3,python3-pip,\
 alsa-utils,alsa-tools,libasound2,\
 usbutils,i2c-tools,pciutils,\
 device-tree-compiler,kmod,\
-gpiod,\
+gpiod,strings,\
 strace,ltrace,gdb,xxd,lsof,psmisc,\
 curl,wget,rsync,\
 bash-completion}"

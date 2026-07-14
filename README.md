@@ -3,9 +3,13 @@
 Mainline Linux on the Anbernic RG Rotate handheld. Board: `ums512_1h10`
 (Unisoc T618 / UMS512, sharkl5pro), A/B partitions, originally Android 12.
 
-**Mainline 7.1 boots a Debian 12 rootfs on eMMC with a working USB serial
-console and a live panel.** For the current per-subsystem status and bring-up
-detail, see **[DEVICE-BRINGUP.md](DEVICE-BRINGUP.md)**.
+**Mainline 7.1 boots a Debian 13 (trixie) rootfs with a live panel, USB
+dual-role OTG (device console + host), and working Wi-Fi/Bluetooth.** Day-to-day
+development boots from a **microSD card** via U-Boot's `extlinux` scan (fast
+to reflash, doesn't touch the eMMC); eMMC (`boot_a` + `mmcblk3p74` userdata)
+remains the on-device/"installed" flow and is what recovery falls back to. For
+the current per-subsystem status and bring-up detail, see
+**[DEVICE-BRINGUP.md](DEVICE-BRINGUP.md)**.
 
 ## Clone
 
@@ -23,7 +27,7 @@ git submodule update --init --recursive
 | Path | What |
 |------|------|
 | `src/linux-7-1-sprd/` | Linux 7.1 SPRD-flavored kernel fork (branch `rg-rotate`, off Otto Pflüger's codeberg `ums9230-mainline` line) — **boots the device**, default target for the recipes below. Board is `ums512-rg-rotate`. |
-| `src/u-boot/` | Vendor U-Boot BSP fork (`ums512_1h10` board target) — teaching it to light the panel and hand off via `extlinux`; the canonical U-Boot tree (see [docs/BOOT-CHAIN.md](docs/BOOT-CHAIN.md)) |
+| `src/u-boot/` | Vendor U-Boot BSP fork (`ums512_1h10` board target) — lights the panel, then hands off to the kernel via an `extlinux.conf` scan (checks microSD `mmc 1:1` before the eMMC `boot_a`/`boot_b` slots); the canonical U-Boot tree |
 | `src/busybox/` | busybox source for the initramfs |
 | `src/initramfs/` | initramfs overlay + reproducible build script (see [src/initramfs/README.md](src/initramfs/README.md)) |
 | `src/rootfs-build/` | Debian rootfs image build scripts (see [src/rootfs-build/README.md](src/rootfs-build/README.md)) |
@@ -33,7 +37,7 @@ git submodule update --init --recursive
 | `vendor/bootloader-unlock/` | Unisoc bootloader unlock tooling |
 | `vendor/datasheets/` | SoC/PMIC datasheets |
 | `tools/spd_dump/` | Spreadtrum FDL flashing tool (+ udev rule) — **primary flash path** |
-| `tools/scripts/` | build/pack helpers (`build_vendor_*`, `pack_*`, `mkdtimg.py`) |
+| `tools/scripts/` | build/pack helpers (`build_vendor_*`, `pack_*`, `mkdtimg.py`) and `build_sdcard_debian.sh` — builds the microSD dev-boot image (unprivileged, no loop devices/root) |
 | `tools/mkbstub/`, `tools/devmemn/` | `mkbootimg` stub; on-target MMIO peek/poke |
 | `device/` | stock dumps, extracted firmware, flashable images (gitignored — local) |
 | `build/` | generated images and scratch outputs (gitignored) |
@@ -96,20 +100,41 @@ make -C src/u-boot \
 ```
 
 `tools/scripts/build_vendor_uboot_img.sh` wraps the same three steps and prints
-the matching `spd_dump write_part uboot_a ...` command. See
-[docs/BOOT-CHAIN.md](docs/BOOT-CHAIN.md) for the extlinux porting status.
+the matching `spd_dump write_part uboot_a ...` command.
+
+### microSD dev-boot image (faster iteration loop)
+
+```bash
+tools/scripts/build_sdcard_debian.sh   # -> rg-rotate-sdcard.img
+```
+
+Builds a full FAT32-boot + ext4-rootfs microSD image in one shot (kernel,
+DTB, initramfs, `extlinux.conf`, and the Debian rootfs tar). `dd` it to a
+card and boot — U-Boot's `extlinux_diag.c` scan checks `mmc 1:1` (the SD)
+before the eMMC slots, so no reflashing eMMC is needed to test kernel/DTB
+changes. The initramfs honors `root=` from the extlinux cmdline
+(`/dev/mmcblk0p2` on SD vs the eMMC default below).
 
 Notes:
-- USB serial needs `g_serial`, `u_serial`, and `f_acm` built in.
+- USB is dual-role OTG, switched automatically by the sc2730 PMIC's Type-C
+  port manager (CC detection) — plugging into a host selects device (the
+  `g_serial`/CDC-ACM console enumerates), plugging in a device selects host.
+  Nothing in userspace or the initramfs forces the role anymore. See
+  [docs/USB-OTG-HOST-CLEANUP.md](docs/USB-OTG-HOST-CLEANUP.md).
 - USB `dr_mode` **must stay `"otg"`** in the board DTB: the sprd musb glue only
-  registers the usb_role_switch in OTG mode, and the initramfs `init` drives that
-  role switch (writes `device` to `/sys/class/usb_role/*/role`) to assert the
-  gadget session + D+ — this board has no VBUS session edge. `dr_mode="peripheral"`
-  removes the role switch and the gadget never enumerates (host sees `-71`).
+  registers the usb_role_switch in OTG mode — this board has no VBUS session
+  edge otherwise. `dr_mode="peripheral"` removes the role switch and the
+  gadget never enumerates (host sees `-71`).
 - `clk_ignore_unused`/`regulator_ignore_unused` are **not** needed — eMMC/SD
   supplies are wired explicitly in the DTB. See [DEVICE-BRINGUP.md](DEVICE-BRINGUP.md).
 
 ## Flash and connect
+
+For day-to-day kernel/DTB iteration, prefer the [microSD dev-boot
+image](#microsd-dev-boot-image-faster-iteration-loop) — it needs no `spd_dump`
+flashing at all, just `dd` the image to a card. The `spd_dump`/FDL flow below
+is for flashing `boot_a`/`vendor_boot_a`/U-Boot itself on the eMMC (the
+installed/on-device flow) or for recovery.
 
 Button note: there is no software volume control yet, so the **Home/Back combo
 button** is the FDL/recovery key. The **actual Vol-Down** is a separate button,
