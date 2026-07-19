@@ -6,13 +6,13 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 UBOOT_DIR="${UBOOT_DIR:-$REPO_ROOT/src/u-boot}"
 OUT_DIR="${OUT_DIR:-$UBOOT_DIR/out-test}"
-DEFCONFIG="${DEFCONFIG:-ums512_1h10_defconfig}"
-DEVICE_TREE="${DEVICE_TREE:-ums512_1h10}"
+DEFCONFIG="${DEFCONFIG:-ums512_rg_rotate_defconfig}"
+DEVICE_TREE="${DEVICE_TREE:-ums512_rg_rotate}"
 CROSS_COMPILE="${CROSS_COMPILE:-aarch64-linux-gnu-}"
 JOBS="${JOBS:-$(nproc)}"
 
-TEMPLATE_IMG="${TEMPLATE_IMG:-$REPO_ROOT/device/stock/dump/uboot_a.img}"
-OUTPUT_IMG="${1:-$REPO_ROOT/build/uboot/uboot_a_vendor_extlinux_booti.img}"
+TEMPLATE_IMG="${TEMPLATE_IMG:-$REPO_ROOT/device/stock/fw/extracted/uboot_b.img}"
+OUTPUT_IMG="${1:-$REPO_ROOT/build/boot/uboot_custom.img}"
 
 for cmd in make python3 sha256sum; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
@@ -25,12 +25,9 @@ mkdir -p "$(dirname "$OUTPUT_IMG")"
 
 echo "Building vendor U-Boot in $OUT_DIR"
 make -C "$UBOOT_DIR" \
-    ARCH=arm CROSS_COMPILE="$CROSS_COMPILE" O="$OUT_DIR" \
-    "$DEFCONFIG"
-
-make -C "$UBOOT_DIR" \
     ARCH=arm DEVICE_TREE="$DEVICE_TREE" \
-    CROSS_COMPILE="$CROSS_COMPILE" O="$OUT_DIR" -j"$JOBS"
+    CROSS_COMPILE="$CROSS_COMPILE" O="$OUT_DIR" -j"$JOBS" \
+    "$DEFCONFIG" u-boot-dtb.bin
 
 PAYLOAD="$OUT_DIR/u-boot-dtb.bin"
 if [[ ! -f "$PAYLOAD" ]]; then
