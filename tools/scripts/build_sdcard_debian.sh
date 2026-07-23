@@ -3,15 +3,20 @@
 # Build a complete micro-SD Debian (trixie, arm64) image for RG Rotate that
 # our vendor U-Boot boots via extlinux.
 #
-# Boot path (see board/spreadtrum/ums512_1h10/extlinux_diag.c): the microSD is
-# registered as `mmc 1` and the scan tries `mmc 1:1 /extlinux/extlinux.conf`
-# FIRST, before the eMMC boot_a/boot_b slots. So the SD *must* be DOS/MBR
-# partitioned with:
-#   p1 = FAT32 boot  -> /extlinux/extlinux.conf + /Image + /<dtb>   (u-boot reads)
-#   p2 = ext4 rootfs -> Debian                                       (kernel mounts)
+# Boot path: the SPL loads our custom U-Boot from the raw GPT-labeled "uboot"
+# partition on the microSD, then that U-Boot's extlinux_diag scan (see
+# board/spreadtrum/ums512_1h10/extlinux_diag.c) reads the FAT boot partition.
+# The microSD is registered as `mmc 1`; the scan tries
+# `mmc 1:2 /extlinux/extlinux.conf` FIRST, before the eMMC boot_a/boot_b slots.
+#
+# GPT layout. `uboot` is deliberately FIRST so the trailing rootfs can be grown
+# in place later (e.g. `growpart`/`resize2fs`) without moving anything:
+#   p1 = raw "uboot"  -> uboot_custom.img          (SPL loads it by GPT label)
+#   p2 = FAT32 boot   -> /extlinux/extlinux.conf + /Image + /<dtb>  (u-boot reads)
+#   p3 = ext4 rootfs  -> Debian                                     (kernel mounts)
 #
 # In Linux the SD is `mmcblk0` (ums512.dtsi: mmc0 = &sdio0; eMMC is mmc3), so
-# the kernel root is /dev/mmcblk0p2.
+# the kernel root is /dev/mmcblk0p3.
 #
 # We ship the busybox initramfs on the boot partition (not a bare direct root):
 # this board has NO broken-out UART, so the ONLY console is the USB g_serial
@@ -21,16 +26,16 @@
 # root= from the extlinux cmdline, so it switch_root's into /dev/mmcblk0p2.
 #
 # Fully unprivileged: the two filesystems are built as plain files (mkfs.vfat
-# + mcopy; mke2fs -d under fakeroot to preserve ownership/setuid), the DOS
-# table is written with sfdisk on a regular file, and the filesystem images are
-# dd'd into their partition offsets. No loop devices, no root, no sudo.
+# + mcopy; mke2fs -d under fakeroot to preserve ownership/setuid), the GPT is
+# written with sfdisk on a regular file, and the raw u-boot image + filesystem
+# images are dd'd into their partition offsets. No loop devices, no root, no sudo.
 #
 # Usage:
 #   ./build_sdcard_debian.sh [out.img]
 # Env overrides:
-#   KERNEL_IMG DTB_IMG ROOTFS_TAR   (inputs)
-#   BOOT_MB=128 ROOTFS_MB=3072      (partition sizes; total ~= sum + 1MiB align)
-#   CMDLINE                          (kernel cmdline; sane default below)
+#   KERNEL_IMG DTB_IMG ROOTFS_TAR UBOOT_IMG   (inputs)
+#   UBOOT_MB=16 BOOT_MB=128 ROOTFS_MB=3072    (partition sizes; total ~= sum + 2MiB align/tail)
+#   CMDLINE                                    (kernel cmdline; sane default below)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -42,6 +47,9 @@ KERNEL_IMG="${KERNEL_IMG:-$REPO_ROOT/src/linux-7-1-sprd/arch/arm64/boot/Image}"
 DTB_IMG="${DTB_IMG:-$REPO_ROOT/src/linux-7-1-sprd/arch/arm64/boot/dts/sprd/ums512-rg-rotate.dtb}"
 ROOTFS_TAR="${ROOTFS_TAR:-$REPO_ROOT/src/rootfs-build/debian-trixie-arm64.tar}"
 INITRD_IMG="${INITRD_IMG:-$REPO_ROOT/build/initramfs/initramfs.cpio.gz}"
+# Raw custom U-Boot image (built by tools/scripts/build_vendor_uboot_img.sh),
+# dd'd into the GPT-labeled "uboot" partition that the SPL loads.
+UBOOT_IMG="${UBOOT_IMG:-$REPO_ROOT/build/boot/uboot_custom.img}"
 AUDIO_DIR="${AUDIO_DIR:-$REPO_ROOT/tools/audio-testing}"
 # AGDSP firmware. The built-in sprd-audcp-boot driver request_firmware()s this
 # at probe (early boot, from the initramfs), but also drop it in the booted
@@ -49,9 +57,10 @@ AUDIO_DIR="${AUDIO_DIR:-$REPO_ROOT/tools/audio-testing}"
 # find it during audio debugging.
 FW_DIR="${FW_DIR:-$REPO_ROOT/src/initramfs/overlay/lib/firmware}"
 
+UBOOT_MB="${UBOOT_MB:-16}"
 BOOT_MB="${BOOT_MB:-128}"
 ROOTFS_MB="${ROOTFS_MB:-3072}"
-ROOT_PART="/dev/mmcblk0p2"
+ROOT_PART="/dev/mmcblk0p3"
 # The initramfs init parses root= off this cmdline and switch_root's into it.
 CMDLINE="${CMDLINE:-console=tty0 ignore_loglevel initrd=/init root=$ROOT_PART rw}"
 
@@ -64,9 +73,10 @@ WIFI_PSK="${WIFI_PSK:-}"
 
 DTB_NAME="$(basename "$DTB_IMG")"
 
-for f in "$KERNEL_IMG" "$DTB_IMG" "$ROOTFS_TAR" "$INITRD_IMG"; do
+for f in "$KERNEL_IMG" "$DTB_IMG" "$ROOTFS_TAR" "$INITRD_IMG" "$UBOOT_IMG"; do
     [[ -f "$f" ]] || { echo "Missing required file: $f" >&2; \
         [[ "$f" == "$INITRD_IMG" ]] && echo "  (build it: src/initramfs/build-initramfs.sh)" >&2; \
+        [[ "$f" == "$UBOOT_IMG" ]] && echo "  (build it: tools/scripts/build_vendor_uboot_img.sh)" >&2; \
         exit 1; }
 done
 for cmd in sfdisk mkfs.vfat mmd mcopy mke2fs fakeroot truncate dd stat sha256sum tar; do
@@ -77,12 +87,21 @@ tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
 
 MiB=$((1024 * 1024))
-ALIGN_MB=1                                  # 1 MiB gap before p1
-P1_START_MB=$ALIGN_MB
-P2_START_MB=$((P1_START_MB + BOOT_MB))
-TOTAL_MB=$((P2_START_MB + ROOTFS_MB))
+ALIGN_MB=1                                  # 1 MiB gap before p1 (room for primary GPT)
+TAIL_MB=1                                   # 1 MiB gap after last part (room for backup GPT)
+P1_START_MB=$ALIGN_MB                        # p1 = raw uboot
+P2_START_MB=$((P1_START_MB + UBOOT_MB))      # p2 = FAT32 boot
+P3_START_MB=$((P2_START_MB + BOOT_MB))       # p3 = ext4 rootfs
+TOTAL_MB=$((P3_START_MB + ROOTFS_MB + TAIL_MB))
 
-echo "==> layout: p1 FAT32 ${BOOT_MB}MiB @ ${P1_START_MB}MiB, p2 ext4 ${ROOTFS_MB}MiB @ ${P2_START_MB}MiB (total ${TOTAL_MB}MiB)"
+# The custom U-Boot image must fit inside the raw uboot partition.
+UBOOT_BYTES=$(stat -c %s "$UBOOT_IMG")
+if (( UBOOT_BYTES > UBOOT_MB * MiB )); then
+    echo "uboot image ($UBOOT_BYTES bytes) exceeds uboot partition (${UBOOT_MB}MiB); raise UBOOT_MB" >&2
+    exit 1
+fi
+
+echo "==> layout: p1 uboot ${UBOOT_MB}MiB @ ${P1_START_MB}MiB, p2 FAT32 ${BOOT_MB}MiB @ ${P2_START_MB}MiB, p3 ext4 ${ROOTFS_MB}MiB @ ${P3_START_MB}MiB (total ${TOTAL_MB}MiB)"
 
 # ---------------------------------------------------------------------------
 # 1. Boot filesystem (FAT32) — extlinux + kernel + dtb
@@ -239,21 +258,30 @@ FAKE
 echo "==> root fs built"
 
 # ---------------------------------------------------------------------------
-# 3. Assemble the whole-disk image: DOS table + dd the two filesystems in
+# 3. Assemble the whole-disk image: GPT + dd the raw uboot image and the two
+#    filesystems into their partition offsets.
 # ---------------------------------------------------------------------------
 truncate -s "$((TOTAL_MB * MiB))" "$OUT_IMG"
 
-# sfdisk in MiB units. p1 = W95 FAT32 LBA (0x0c, bootable), p2 = Linux (0x83).
+# GPT, sector units. Named partitions so the SPL/tooling can find them by label:
+#   p1 "uboot"         -> Linux reserved-bootloader GUID  (raw, no filesystem)
+#   p2 "RGROTATE_BT"   -> EFI System / FAT (u-boot reads extlinux here)
+#   p3 "rgrotate-root" -> Linux filesystem GUID
+GUID_UBOOT="21686148-6449-6E6F-744E-656564454649"  # BIOS boot / raw bootloader
+GUID_ESP="C12A7328-F81F-11D2-BA4B-00A0C93EC93B"     # EFI System Partition (FAT)
+GUID_LINUX="0FC63DAF-8483-4772-8E79-3D69D8477DE4"   # Linux filesystem
 sfdisk "$OUT_IMG" >/dev/null <<EOF
-label: dos
+label: gpt
 unit: sectors
 sector-size: 512
-${P1_START_MB}MiB : start=$((P1_START_MB * MiB / 512)), size=$((BOOT_MB * MiB / 512)), type=0c, bootable
-${P2_START_MB}MiB : start=$((P2_START_MB * MiB / 512)), size=$((ROOTFS_MB * MiB / 512)), type=83
+start=$((P1_START_MB * MiB / 512)), size=$((UBOOT_MB * MiB / 512)),  type=$GUID_UBOOT, name="uboot"
+start=$((P2_START_MB * MiB / 512)), size=$((BOOT_MB * MiB / 512)),   type=$GUID_ESP,   name="RGROTATE_BT"
+start=$((P3_START_MB * MiB / 512)), size=$((ROOTFS_MB * MiB / 512)), type=$GUID_LINUX, name="rgrotate-root"
 EOF
 
-dd if="$BOOT_IMG"   of="$OUT_IMG" bs=1M seek="$P1_START_MB" conv=notrunc status=none
-dd if="$ROOTFS_IMG" of="$OUT_IMG" bs=1M seek="$P2_START_MB" conv=notrunc status=none
+dd if="$UBOOT_IMG"  of="$OUT_IMG" bs=1M seek="$P1_START_MB" conv=notrunc status=none
+dd if="$BOOT_IMG"   of="$OUT_IMG" bs=1M seek="$P2_START_MB" conv=notrunc status=none
+dd if="$ROOTFS_IMG" of="$OUT_IMG" bs=1M seek="$P3_START_MB" conv=notrunc status=none
 
 echo
 echo "Created: $OUT_IMG"

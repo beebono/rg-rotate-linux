@@ -21,3 +21,6 @@
 	path = src/linux-7-1-sprd
 	url = https://github.com/beebono/linux-mainline-sprd.git
 	branch = rg-rotate
+[submodule "src/spl"]
+	path = src/spl
+	url = https://github.com/beebono/ums512_spl.git

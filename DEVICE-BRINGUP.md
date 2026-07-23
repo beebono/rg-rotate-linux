@@ -60,10 +60,11 @@ Debian, and on-screen console are the primary workflow.
 
 ## U-Boot 2nd-pass targets
 - [x] Actual Panel/Bootlogo — **working.** Full logo and lcd console support confirmed.
-- [x] Dual-boot Android-from-eMMC/Linux-from-microSD — **working.** Custom U-Boot trampolines properly into stock U-Boot in slot b. All inputs work properly. *Caveat:* Cannot boot into Linux while a charger is plugged in, makes charging while off a lot easier to do it that way.
+- [x] Dual-boot Android-from-eMMC/Linux-from-microSD — **working.** Custom U-Boot can trampoline properly into stock U-Boot, but this is handled by the SPL now.
+- [x] Charge-while-Off Handling - **working.** Displays percentage as text and detects whether powered on by USB plug or power button. Can also hold power while charging to finish boot.
 
 ## The Big One
-- [ ] Full OS of some kind...
+- [ ] Full OS of some kind. (Probably ROCKNIX or Knulli?)
 
 ## "If there's nothing else to do" target
 - [ ] DDR devfreq — memory clock is presumably pinned at its boot frequency rather than scaling with load; the one confirmed gap outside PM. Needs scoping (does ums512 have a DDR devfreq/DFS driver upstream or in the vendor tree) and then power/perf tuning for sustained gaming loads vs idle.

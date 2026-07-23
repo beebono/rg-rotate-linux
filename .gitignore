@@ -12,4 +12,5 @@
 /src/rootfs-build/*.img
 /src/rootfs-build/*.img.tar
 
-# Generated initramfs tree is emitted into /build (see src/initramfs/build-initramfs.sh)
+# Misc
+tools/scripts/__pycache__
