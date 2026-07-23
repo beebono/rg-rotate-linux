@@ -24,3 +24,6 @@
 [submodule "src/spl"]
 	path = src/spl
 	url = https://github.com/beebono/ums512_spl.git
+[submodule "src/mali-kbase"]
+	path = src/mali-kbase
+	url = https://github.com/beebono/mali_kbase.git
