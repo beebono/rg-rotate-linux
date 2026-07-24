@@ -71,7 +71,8 @@ Debian, and on-screen console are the primary workflow.
 ## The Big One
 - [ ] Full OS of some kind. (Probably ROCKNIX)
 
-## "If there's nothing else to do" target
+## "If there's nothing else to do" targets
+- [ ] JEITA per-zone charge derating — the cold/hot *cutoffs* are done: `bq2415x_temp_work()` inhibits charging outside `operating-range-celsius` (0–60 °C) with 3 °C hysteresis, reading the battery NTC through the fuel gauge's `voltage-temp-table` conversion. (Not charger-manager: it gates charging via a regulator this charger does not expose, and per-zone derating has to live in the charger driver anyway.) What is missing is stock's per-zone derating: `<0 °C` stop, `0–15 °C` 1000 mA, `15–45 °C` 2000 mA, `45–60 °C` 700 mA @ 4.10 V, `>60 °C` stop, 3 °C hysteresis — decoded from `docs/decomp_overlay.dts`, where the temperature encoding is `°C × 10 + 1000`. Mainline `charger-manager` has no per-zone tables (that is a Spreadtrum vendor extension), so this needs real code: either a JEITA table in the charger driver or an extension to charger-manager. **Until then `ti,charge-current` stays at 1240 mA** rather than stock's 2000 mA, since one flat current must be safe in the coldest zone it can be used in. Worth ~23 min on a full charge (110 → 86 min) — the gain is modest because higher current enters CV taper earlier and the taper absorbs most of it, which is why this is low priority.
 - [ ] DDR devfreq — memory clock is presumably pinned at its boot frequency rather than scaling with load; the one confirmed gap outside PM. Needs scoping (does ums512 have a DDR devfreq/DFS driver upstream or in the vendor tree) and then power/perf tuning for sustained gaming loads vs idle.
 
 Cross-reference `device/stock/dtb_stock.dts` whenever a node, supply, syscon, or
