@@ -1,8 +1,15 @@
 # eFuse shadow, thermal trim, and CPU DVFS binning (UMS512 / T618)
 
 Status: **FIXED** on the Android/GammaOS side as of 2026-08-04 — one line in
-[`ums512_1h10.open.config`](../src/spl/board/ums512_1h10.open.config). The mainline side still
-carries a workaround that should now be revisited; see [Open items](#open-items).
+[`ums512_1h10.open.config`](../src/spl/board/ums512_1h10.open.config). Mainline turned out never to
+have been affected by this bug at all, though investigating it did uncover a separate and serious
+thermal defect there, now fixed; see [Open items](#open-items).
+
+One useful side effect of the SPL fix: the eFuse RAM shadow is now trustworthy at kernel runtime.
+Read live at phys `0x15C00` (status word 0 = success, data at `0x15C04`, 24 blocks = 0x60 bytes),
+it is **byte-for-byte identical** to the direct `ap_efuse@32240000` reads mainline already uses. So
+there is no reason to switch mainline back to the shadow — the data is the same and the direct read
+has no bootloader dependency.
 
 ## TL;DR
 
@@ -159,15 +166,33 @@ Two measurement rules worth internalising:
 
 ## Open items
 
-- **Revisit the mainline idle-injection workaround.** Mainline added idle-injection cooling
-  (commits `76ef4f1`, `46f422e`, `315a9e3`, with the cap later raised 50% → 80%) specifically
-  because CPU DVFS there "does nothing". That is plausibly the **same `dvfs_bin` corruption
-  documented here**, rather than the independent hwdvfs-arming bug it was assumed to be. With
-  `FW_SEG7` off, the idle injection may be unnecessary, or tuned far too aggressively for a machine
-  whose DVFS now works. Worth re-measuring before anything else on the mainline thermal path.
-  - Mainline thermal *trim* is already immune, since it was moved off the shadow to the real
-    controller `ap_efuse@32240000`. But check whether mainline's `dvfs_bin` cell still resolves
-    through `cache_efuse@800` — if it does, mainline is still exposed on the DVFS side.
+- ~~**Revisit the mainline idle-injection workaround.**~~ **Answered 2026-08-04: mainline was never
+  affected by this bug, and the idle injection was not too aggressive — it was reaching one core.**
+  - Mainline thermal *trim* is immune (moved to `ap_efuse@32240000`), and mainline ums512 has **no
+    `dvfs_bin` cell at all** — only `ums9230.dtsi` defines one. The boot warning
+    `sprd_cpufreq: can not get dvfs_bin ret -2` is expected and benign. So the two symptoms are
+    **not** the same bug.
+  - Do **not** add the `dvfs_bin` cells to mainline. `sprd_cpufreq_bin_main()` returning a valid
+    bin makes `sprd-cpufreq-common.c` build the OPP property name `operating-points-<bin>`; our DT
+    only has plain `operating-points`, so it would fail `-ENODATA` and cpufreq would stop
+    registering entirely. Binning only selects a *table name* — we already have the one correct
+    stock T618 table — so it cannot affect whether the clock moves.
+  - The real defect was elsewhere: the single `thermal-idle` node under `CPU0` throttled **one core
+    of eight**, because psci registers one cpuidle driver per cpu
+    (`cpuidle-psci.c: drv->cpumask = cpumask_of(cpu)`). Fixed by giving every cpu its own node.
+    Sustained 8-way load went from "101 °C and still climbing" to a steady 70–71 °C.
+  - CPU DVFS on mainline **is** genuinely inert, independently of any efuse issue. Measured with
+    the PMU cycle counter against a pinned busy loop: cluster0 sits at a fixed **1536 MHz** and
+    cluster1 at **1228.8 MHz** (its table *floor*) regardless of what is requested. Note the hw
+    *does* latch the index and move the voltage grade — the clock just never follows. Root cause
+    still unknown; this is the next thing worth chasing, since the A75s being pinned at their floor
+    is a ~1.63× performance loss and idle injection saves power only linearly where DVFS saves
+    ~V²f.
+  - Measurement trap: `scaling_cur_freq` and the `sprd_hwdvfs_normal: Get cpu frequency-indexN`
+    dmesg line both just echo the latched index and will happily report a frequency the silicon is
+    not running. Use `perf stat -e armv8_cortex_a55/cycles/ -C <cpu>` against a pinned load.
+    Also beware `boost_mode_flag` (static init 1) in `sprd-cpufreqhw.c`: `target_index` returns 0
+    without doing anything while it is set and `policy->max >= cpuinfo.max_freq`.
 - **Understand why seg7 corrupts the shadow.** Currently behavioural evidence only.
 - **Fix the diag `.bss` overlap** (explicit section placement, or shrink the trace buffer) and add a
   build-time assert that `.bss` ends below `0x15C00`, so in-SPL captures of this region can be
