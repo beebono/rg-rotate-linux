@@ -203,3 +203,50 @@ The realme-gen driver reads tables from **archdata**, not DT. Our board DT
 - `docs/stock-android-reference/stock_live_booted.dts` — live post-fixup stock DT
 - `docs/stock-android-reference/stock_clk_summary.txt` — stock clock states
 - `docs/dvfs-working-regmaps/*_2ghz.txt` — stock topdvfs/pmu regmaps at 2 GHz
+
+---
+
+## 2026-08-06 outcome: A75 runs 2.002 GHz (bypass mode); real voltage scaling still open
+
+State shipped on `rg-rotate` (kernel `40c0a65c37f5`) + spl branch `cm4-defer` (`435e7eb`):
+- realme-gen hwdvfs stack + `VOLTAGE_MEET_BYP` (0x98 bit0) baked into archdata for
+  DCDC_CPU1 → full frequency ladder, PMU-verified 2.002 GHz, stable under load.
+  Voltage is pinned at the FAN53555's power-on grade (top grade per stock idle
+  readings) — correct for 2 GHz, wasteful at idle.
+- SPL `CONFIG_SPL_FW_CM4_DEFER` (flashed to eMMC boot0/boot1, backup in
+  device/backup/boot0.bak): AON 0x8c writable on SD boots.
+- pmsys/sipc/sensorhub kernel stack cherry-picked (sprd_pmsys rproc loads
+  sprd/pm_bootcode.bin + sprd/pm_sys.bin, staged in extra-firmware/T618/sprd).
+
+### Definite next steps for actual voltage movement (in order)
+
+1. **Rebuild ROCKNIX and confirm the pmsys rproc boots the CM4 kernel-side every
+   boot**: `0x327d0124 == 0xc1`, PMU `0x774` deep-sleep count advancing, the three
+   rpmsg devices present. (Liveness rules: never devmem SP IRAM 0x800000 unless the
+   SP is known awake — it wedges the AP bus.)
+2. **Check whether a CM4 booted *before* cpufreq probes changes anything**: with
+   the rproc bringing pm_sys up early, see if `STATE_I2C` ever leaves 4 / 
+   `CURRENT_VOLTAGE` populates once the engine posts a fresh vote (temporarily
+   clear 0x98 bit0 via devmem to un-bypass and watch 0x9c). Today's manual load
+   came up long after the request latched; ordering may matter.
+3. **If still stuck: SIPC handshake theory.** The DFS service inside pm_sys may
+   only start after the AP opens its SIPC channels (the sbuf OPEN/ack added in
+   `71144b21`). Compare `0x9c` before/after the rpmsg devices appear. Also look at
+   the vendor 5.4 `sprd_dfs`/`dfs_freq` driver — stock may send an explicit
+   "DVFS enable" smsg the mainline stack never sends.
+4. **If still stuck: channel state-machine reset.** The I2C request latched at
+   state 4 may need the DVFS module's i2c channel re-armed: candidates are
+   toggling `DCDC_CPU1_SW_DVFS_CTRL` (0x94 bit0 SW_TUNE_EN) with an explicit SW
+   tune, or a full DVFS module eb toggle (aon 0x4 bit7 — risky live, do it from
+   the driver at probe before the first vote).
+5. **Ground truth on the rail** whenever convenient: multimeter on the DCDC_CPU1
+   inductor across a forced 1.23 GHz ↔ 2.0 GHz swing; or once the channel works,
+   `0x9c` CURRENT_VOLTAGE becomes self-reporting.
+6. **When the channel works**: delete `ums512_vol_meet_byp_cfg` (archdata) and the
+   `sprd_dvfs_vol_meet_bypass()` call — grep for "voltage-meet" in
+   drivers/cpufreq. Then re-check idle power and suspend (pm_sys also owns
+   deep-sleep paths), and re-verify thermals.
+
+Bonus unlocked by the same stack: sensor hub (ICM-42607 accel/gyro) — see the
+`t618-sensors-behind-cm4-sensorhub` memory; opcode downloads already confirmed
+accepted, calibration-config send is the next untested step there.
