@@ -1,0 +1,67 @@
+registered pin groups:
+group: rffe1_sda
+pin 151 (SHARKL5PRO_RFFE1_SDA)
+
+group: sda3
+pin 226 (SHARKL5PRO_SDA3)
+
+group: scl3
+pin 227 (SHARKL5PRO_SCL3)
+
+group: extint1
+pin 225 (SHARKL5PRO_EXTINT1)
+
+group: extint0
+pin 224 (SHARKL5PRO_EXTINT0)
+
+group: keyin2
+pin 164 (SHARKL5PRO_KEYIN2)
+
+group: keyin1
+pin 163 (SHARKL5PRO_KEYIN1)
+
+group: keyin0
+pin 162 (SHARKL5PRO_KEYIN0)
+
+group: keyout2
+pin 161 (SHARKL5PRO_KEYOUT2)
+
+group: keyout1
+pin 160 (SHARKL5PRO_KEYOUT1)
+
+group: keyout0
+pin 159 (SHARKL5PRO_KEYOUT0)
+
+group: vbc-iis3-0
+pin 23 (SHARKL5PRO_IIS_INF0_SYS_SEL)
+
+group: vbc-iism0-0
+pin 23 (SHARKL5PRO_IIS_INF0_SYS_SEL)
+
+group: vbc-iis-to-pad
+pin 52 (SHARKL5PRO_VBC_IIS_INF_SYS_SEL)
+
+group: vbc-iis-to-aon-usb
+pin 52 (SHARKL5PRO_VBC_IIS_INF_SYS_SEL)
+
+group: vbc-iism0-1
+pin 20 (SHARKL5PRO_IIS_INF1_SYS_SEL)
+
+group: vbc-iism0-3
+pin 17 (SHARKL5PRO_IIS_INF3_SYS_SEL)
+
+group: vbc-iis0-3
+pin 17 (SHARKL5PRO_IIS_INF3_SYS_SEL)
+
+group: vbc-iis1-3
+pin 17 (SHARKL5PRO_IIS_INF3_SYS_SEL)
+
+group: vbc-iis2-3
+pin 17 (SHARKL5PRO_IIS_INF3_SYS_SEL)
+
+group: vbc-iis3-3
+pin 17 (SHARKL5PRO_IIS_INF3_SYS_SEL)
+
+group: ap-iis0-3
+pin 17 (SHARKL5PRO_IIS_INF3_SYS_SEL)
+
