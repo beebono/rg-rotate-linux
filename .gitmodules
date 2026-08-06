@@ -24,3 +24,6 @@
 [submodule "src/spl"]
 	path = src/spl
 	url = https://github.com/beebono/ums512_spl.git
+[submodule "vendor/android-kernel-5-4-realme"]
+	path = vendor/android-kernel-5-4-realme
+	url = https://github.com/realme-kernel-opensource/realme_C33_C33-2023_C33-128GB-AndroidS-kernel-source.git
